@@ -7,6 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Source files
 set(SOCKET_SOURCES
     src/util/Socket.cpp
+    src/util/ThreadPool.cpp
 )
 
 set(CLIENT_SOURCES

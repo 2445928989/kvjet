@@ -21,8 +21,8 @@ ThreadPool::ThreadPool(int threadCount):stop(false){
 
 template<typename T,typename... Args>
 auto ThreadPool::enqueue(T&& f, Args&&... args)->std::future<typename std::invoke_result<T,Args...>::type>{
-    using returntype=std::invoke_result<T,Args...>::type;
-    auto task=std::make_shared<std::packaged_task<rerturn_type()>>(
+    using returntype=typename std::invoke_result<T,Args...>::type;
+    auto task=std::make_shared<std::packaged_task<returntype()>>(
         std::bind(std::forward<T>(f),std::forward<Args>(args)...)
     );
     std::future<returntype> res=task->get_future();
