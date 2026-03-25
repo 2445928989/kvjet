@@ -76,7 +76,7 @@ void Socket::listen(int backlog) {
 }
 
 Socket Socket::accept() {
-    int client_fd = ::accept(fd_, 0, 0);
+    int client_fd = ::accept(fd_, nullptr, nullptr);
     if (client_fd == -1) {
         throw std::runtime_error("Accept error: " + std::string(strerror(errno)));
     }

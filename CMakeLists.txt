@@ -46,10 +46,19 @@ target_link_libraries(kvtest PRIVATE Threads::Threads)
 # Enable testing
 enable_testing()
 
-# Add test case
+# Add test case with automatic server startup
 add_test(
     NAME test_echo_1
-    COMMAND kvtest 127.0.0.1 9999
-        "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_cases/1.in"
-        "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_cases/1.out"
+    COMMAND bash -c "
+        $<TARGET_FILE:kvserver> 9999 &
+        SERVER_PID=\$!
+        sleep 1
+        $<TARGET_FILE:kvtest> 127.0.0.1 9999 \
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_cases/1.in \
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_cases/1.out
+        TEST_RESULT=\$?
+        kill \$SERVER_PID 2>/dev/null
+        exit \$TEST_RESULT
+    "
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )

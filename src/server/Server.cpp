@@ -4,6 +4,7 @@
 
 Server::Server(uint16_t port) : server_sock() {
     server_sock.bind("0.0.0.0", port);
+    server_sock.listen(5);
 }
 Server::~Server() {}
 ssize_t Server::send(const std::string &str) {
