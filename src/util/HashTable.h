@@ -10,6 +10,7 @@ public:
     //设置key和value
     void set(std::string key,std::string value);
     bool erase(std::string key);
+    int gethash(std::string key);
 private:
     struct Node{
         std::string key;
@@ -17,7 +18,6 @@ private:
     };
     std::vector<std::list<Node>> buckets;
     int sz,bucketsz;
-    int gethash(std::string key);
     void rehash();
     //查找key对应的位置在哪，没有返回nullptr
     Node* find(std::string key);

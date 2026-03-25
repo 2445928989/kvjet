@@ -45,7 +45,7 @@ void HashTable::rehash(){
     for(int i=0;i<oldbucketsz;i++){
         for(auto &node:buckets[i]){
             int idx=gethash(node.key)%bucketsz;
-            newbuckets[idx].push_back({move(node.key),move(node.value)});
+            newbuckets[idx].push_back({std::move(node.key),std::move(node.value)});
         }
     }
     buckets.swap(newbuckets);
