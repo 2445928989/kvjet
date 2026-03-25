@@ -1,0 +1,41 @@
+# Build directories
+build/
+Build/
+cmake-build-debug/
+cmake-build-release/
+out/
+
+# Compiled objects
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+*.exe
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.user
+.DS_Store
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.cmake
+
+# Dependencies
+vcpkg_installed/
+conan/
+
+# Misc
+*.log
+.git/
+node_modules/
