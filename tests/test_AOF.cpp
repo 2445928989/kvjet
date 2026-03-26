@@ -50,7 +50,7 @@ void test_aof_append_and_recover() {
         assert(kv.checkexist("beta"));
     }
 
-    //std::filesystem::remove(path_str);
+    std::filesystem::remove(path_str);
 }
 
 int main() {
