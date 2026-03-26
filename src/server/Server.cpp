@@ -2,7 +2,7 @@
 #include "Server.h"
 #include <climits>
 
-Server::Server(uint16_t port) : server_sock() {
+Server::Server(uint16_t port) : server_sock(), threadPool(16) {
     server_sock.bind("0.0.0.0", port);
     server_sock.listen(5);
 }

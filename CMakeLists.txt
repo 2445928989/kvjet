@@ -4,22 +4,31 @@ project(kvjet)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Source files
-set(SOCKET_SOURCES
+# 实用工具源文件
+set(UTIL_SOURCES
     src/util/Socket.cpp
     src/util/ThreadPool.cpp
     src/util/HashTable.cpp
     src/util/KvStore.cpp
 )
 
+# RESP协议源文件
+set(RESP_SOURCES
+    src/resp/RespValue.cpp
+    src/resp/RespParser.cpp
+    src/resp/RespEncoder.cpp
+)
+
 set(CLIENT_SOURCES
     src/client/Client.cpp
-    ${SOCKET_SOURCES}
+    ${UTIL_SOURCES}
+    ${RESP_SOURCES}
 )
 
 set(SERVER_SOURCES
     src/server/Server.cpp
-    ${SOCKET_SOURCES}
+    ${UTIL_SOURCES}
+    ${RESP_SOURCES}
 )
 
 # Link pthread

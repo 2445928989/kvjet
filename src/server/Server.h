@@ -1,6 +1,8 @@
 // Server.h
 #pragma once
 #include "../util/Socket.h"
+#include "../util/ThreadPool.h"
+#include "../util/HashTable.h"
 #include <cerrno>
 #include <cstdint>
 #include <optional>
@@ -29,4 +31,7 @@ private:
     Socket server_sock;
     // 延迟初始化
     std::optional<Socket> client_sock;
+    
+    ThreadPool threadPool;
+    HashTable hashtable;
 };
