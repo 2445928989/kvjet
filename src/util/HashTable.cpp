@@ -3,7 +3,7 @@
 HashTable::HashTable() : buckets(16), bucketsz(16), sz(0), loadfactor(0.75) {
 }
 
-uint32_t HashTable::gethash(std::string_view key) {
+uint32_t HashTable::gethash(std::string_view key) const {
     uint32_t h = 0;
     for (const char &c : key) {
         h = h * 131 + static_cast<unsigned char>(c);
@@ -31,14 +31,14 @@ std::optional<std::string> HashTable::get(std::string_view key) {
         return std::nullopt;
 }
 
-void HashTable::set(std::string_view key, std::string_view value) {
+void HashTable::set(std::string key, std::string value) {
     std::unique_lock<std::shared_mutex> lock(mtx);
     Node *p = find(key);
     if (p != nullptr) {
-        p->value = std::string(value);
+        p->value = std::move(value);
     } else {
         size_t idx = gethash(key) % bucketsz;
-        buckets[idx].push_back({std::string(key), std::string(value)});
+        buckets[idx].push_back({std::move(key), std::move(value)});
         sz++;
         double nowloadfactor = 1.0 * sz / bucketsz;
         if (nowloadfactor > loadfactor)
@@ -47,7 +47,7 @@ void HashTable::set(std::string_view key, std::string_view value) {
 }
 
 void HashTable::rehash() {
-    int oldbucketsz = bucketsz;
+    size_t oldbucketsz = bucketsz;
     bucketsz <<= 1;
     decltype(buckets) newbuckets(bucketsz);
     for (int i = 0; i < oldbucketsz; i++) {

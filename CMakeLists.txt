@@ -4,21 +4,30 @@ project(kvjet)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Source files
-set(SOCKET_SOURCES
+# 实用工具源文件
+set(UTIL_SOURCES
     src/util/Socket.cpp
     src/util/ThreadPool.cpp
     src/util/HashTable.cpp
 )
 
+# RESP协议源文件
+set(RESP_SOURCES
+    src/resp/RespValue.cpp
+    src/resp/RespParser.cpp
+    src/resp/RespEncoder.cpp
+)
+
 set(CLIENT_SOURCES
     src/client/Client.cpp
-    ${SOCKET_SOURCES}
+    ${UTIL_SOURCES}
+    ${RESP_SOURCES}
 )
 
 set(SERVER_SOURCES
     src/server/Server.cpp
-    ${SOCKET_SOURCES}
+    ${UTIL_SOURCES}
+    ${RESP_SOURCES}
 )
 
 # Link pthread
@@ -48,7 +57,7 @@ target_link_libraries(kvtest PRIVATE Threads::Threads)
 # HashTable unit test executable
 add_executable(kvtest_hashtable
     tests/test_hashtable.cpp
-    ${SOCKET_SOURCES}
+    ${UTIL_SOURCES}
 )
 target_link_libraries(kvtest_hashtable PRIVATE Threads::Threads)
 
