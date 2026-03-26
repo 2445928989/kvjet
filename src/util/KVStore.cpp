@@ -1,7 +1,6 @@
 #include "KVStore.h"
 
 KVStore::KVStore(size_t shardCount):shardCount(shardCount){
-    shards.resize(shardCount);
     for(int i=0;i<shardCount;i++){
         shards.emplace_back(std::make_unique<Shard>());
     }

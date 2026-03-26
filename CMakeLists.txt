@@ -46,13 +46,12 @@ add_executable(kvtest
 )
 target_link_libraries(kvtest PRIVATE Threads::Threads)
 
-# HashTable unit test executable
-add_executable(kvtest_hashtable
-    tests/test_hashtable.cpp
+# KVStore unit test executable
+add_executable(kvtest_kvstore
+    tests/test_kvstore.cpp
     ${SOCKET_SOURCES}
 )
-target_link_libraries(kvtest_hashtable PRIVATE Threads::Threads)
-
+target_link_libraries(kvtest_kvstore PRIVATE Threads::Threads)
 # Enable testing
 enable_testing()
 
@@ -73,9 +72,9 @@ add_test(
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
 
-# Add HashTable unit test
+# Add KvStore unit test
 add_test(
-    NAME test_hashtable_unit
-    COMMAND $<TARGET_FILE:kvtest_hashtable>
+    NAME test_kvstore_unit
+    COMMAND $<TARGET_FILE:kvtest_kvstore>
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
