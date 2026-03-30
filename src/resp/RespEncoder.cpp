@@ -1,12 +1,12 @@
 // RespEncoder.cpp
 #include "RespEncoder.h"
 namespace resp {
-    void encodeSimpleString(SimpleString msg, std::string &str) {
+    void encodeSimpleString(const SimpleString& msg, std::string &str) {
         str += "+";
         str += msg.value;
         str += "\r\n";
     }
-    void encodeError(Error msg, std::string &str) {
+    void encodeError(const Error& msg, std::string &str) {
         str += "-";
         str += msg.value;
         str += "\r\n";
@@ -16,7 +16,7 @@ namespace resp {
         str += std::to_string(num);
         str += "\r\n";
     }
-    void encodeBulkString(BulkString data, std::string &str) {
+    void encodeBulkString(const BulkString& data, std::string &str) {
         str += "$";
         if (!data.value.has_value()) {
             str += "-1\r\n";
@@ -27,22 +27,23 @@ namespace resp {
             str += "\r\n";
         }
     }
-    void encodeArray(Array elements, std::string &str) {
+    void encodeArray(const Array &elements, std::string &str) {
         if (!elements.value.has_value()) {
             str += "*-1\r\n";
         } else {
+            str += "*";
             str += std::to_string(elements.value->size());
             str += "\r\n";
-            for (const auto &element : *(elements.value)) {
-                if (auto it = std::get_if<SimpleString>(&element.get())) {
+            for (const auto &ptr : *(elements.value)) {
+                if (auto it = std::get_if<SimpleString>(ptr->getPtr())) {
                     encodeSimpleString(*it, str);
-                } else if (auto it = std::get_if<Error>(&element.get())) {
+                } else if (auto it = std::get_if<Error>(ptr->getPtr())) {
                     encodeError(*it, str);
-                } else if (auto it = std::get_if<int64_t>(&element.get())) {
+                } else if (auto it = std::get_if<int64_t>(ptr->getPtr())) {
                     encodeInteger(*it, str);
-                } else if (auto it = std::get_if<BulkString>(&element.get())) {
+                } else if (auto it = std::get_if<BulkString>(ptr->getPtr())) {
                     encodeBulkString(*it, str);
-                } else if (auto it = std::get_if<Array>(&element.get())) {
+                } else if (auto it = std::get_if<Array>(ptr->getPtr())) {
                     encodeArray(*it, str);
                 }
             }

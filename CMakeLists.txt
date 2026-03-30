@@ -9,7 +9,7 @@ set(UTIL_SOURCES
     src/util/Socket.cpp
     src/util/ThreadPool.cpp
     src/util/HashTable.cpp
-    src/util/KvStore.cpp
+    src/util/KVStore.cpp
     src/util/AOF.cpp
 )
 
@@ -58,10 +58,18 @@ target_link_libraries(kvtest PRIVATE Threads::Threads)
 
 # KVStore unit test executable
 add_executable(kvtest_kvstore
-    tests/test_kvstore.cpp
+    tests/test_KVStore.cpp
     ${UTIL_SOURCES}
 )
 target_link_libraries(kvtest_kvstore PRIVATE Threads::Threads)
+
+# RESP protocol unit test executable
+add_executable(kvtest_resp
+    tests/test_RESP.cpp
+    ${RESP_SOURCES}
+)
+target_link_libraries(kvtest_resp PRIVATE Threads::Threads)
+
 # Enable testing
 enable_testing()
 
@@ -86,6 +94,13 @@ add_test(
 add_test(
     NAME test_kvstore_unit
     COMMAND $<TARGET_FILE:kvtest_kvstore>
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+)
+
+# Add RESP protocol unit test
+add_test(
+    NAME test_resp_unit
+    COMMAND $<TARGET_FILE:kvtest_resp>
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
 
