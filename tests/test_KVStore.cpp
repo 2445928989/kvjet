@@ -1,4 +1,5 @@
 #include "../src/util/KVStore.h"
+#include <atomic>
 #include <cassert>
 #include <iostream>
 #include <thread>
@@ -62,7 +63,7 @@ void test_concurrent_reads() {
     std::atomic<bool> all_success{true};
 
     for (int t = 0; t < 10; t++) {
-        threads.emplace_back([&store, &all_success, t]() {
+        threads.emplace_back([&]() {
             for (int i = 0; i < 100; i++) {
                 auto result = store.get("key" + std::to_string(i));
                 if (!result.has_value() || result.value() != "value" + std::to_string(i)) {

@@ -16,7 +16,7 @@ template<typename T>
 void KVStore<T>::set(std::string key,T value){
     Shard& shard=getShard(key);
     std::unique_lock lock(shard.lock);
-    shard.data.set(key,value);
+    shard.data.set(key, value);
 }
 
 template<typename T>

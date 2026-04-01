@@ -1,4 +1,5 @@
 #pragma once
+#include<memory>
 #include<vector>
 #include<mutex>
 #include"HashTable.h"
@@ -10,7 +11,8 @@ public:
     std::optional<T> get(std::string_view key);
     bool del(std::string_view key);
     bool checkexist(std::string_view key);
-    KVStore(size_t shardCount=16);
+    KVStore(size_t shardCount = 16);
+
 private:
     size_t shardCount;
     struct Shard{
@@ -18,5 +20,5 @@ private:
         std::shared_mutex lock;
     };
     std::vector<std::unique_ptr<Shard>> shards;
-    Shard& getShard(std::string_view key);
+    Shard &getShard(std::string_view key);
 };
