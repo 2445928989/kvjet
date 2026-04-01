@@ -11,7 +11,7 @@ void test_aof_append_and_recover() {
     std::filesystem::remove(path_str);
     std::cerr<<"path!"<<path_str<<"\n";
     {
-        KVStore kv;
+        KVStore<std::string> kv;
         AOF aof(path_str);
         kv.set("alpha", "1");
         aof.append("SET alpha 1");
@@ -37,7 +37,7 @@ void test_aof_append_and_recover() {
     }
 
     {
-        KVStore kv;
+        KVStore<std::string> kv;
         AOF aof(path_str);
         aof.recover(&kv);
 

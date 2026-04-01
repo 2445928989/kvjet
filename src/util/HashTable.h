@@ -3,20 +3,21 @@
 #include <shared_mutex>
 #include <string>
 #include <vector>
+template<typename T>
 class HashTable {
 public:
     HashTable();
     // 获取对应的value,找不到返回std::nullopt
-    std::optional<std::string> get(std::string_view key);
+    std::optional<T> get(std::string_view key);
     // 设置key和value
-    void set(std::string key, std::string value);
+    void set(std::string key, T value);
     bool erase(std::string_view key);
     static uint32_t gethash(std::string_view key);
     bool checkexist(std::string_view key);
 private:
     struct Node {
         std::string key;
-        std::string value;
+        T value;
     };
 
     std::vector<std::list<Node>> buckets;

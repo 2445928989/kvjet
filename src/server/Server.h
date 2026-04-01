@@ -33,5 +33,5 @@ private:
     std::optional<Socket> client_sock;
     
     ThreadPool threadPool;
-    HashTable hashtable;
+    HashTable<std::string> hashtable;
 };

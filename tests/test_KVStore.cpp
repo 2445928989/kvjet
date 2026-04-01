@@ -3,10 +3,11 @@
 #include <iostream>
 #include <thread>
 #include <vector>
+#include <string> 
 
 void test_basic_operations() {
     std::cout << "Testing basic operations...\n";
-    KVStore store;
+    KVStore<std::string> store;
 
     // set/get
     store.set("key1", "value1");
@@ -51,7 +52,7 @@ void test_basic_operations() {
 
 void test_concurrent_reads() {
     std::cout << "Testing concurrent reads...\n";
-    KVStore store;
+    KVStore<std::string> store;
 
     for (int i = 0; i < 100; i++) {
         store.set("key" + std::to_string(i), "value" + std::to_string(i));
@@ -81,7 +82,7 @@ void test_concurrent_reads() {
 
 void test_concurrent_writes() {
     std::cout << "Testing concurrent writes and reads...\n";
-    KVStore store;
+    KVStore<std::string> store;
     std::vector<std::thread> threads;
 
     for (int t = 0; t < 5; t++) {
@@ -110,7 +111,7 @@ void test_concurrent_writes() {
 
 void test_large_dataset() {
     std::cout << "Testing with large dataset...\n";
-    KVStore store;
+    KVStore<std::string> store;
 
     const int COUNT = 1000;
     for (int i = 0; i < COUNT; i++) {

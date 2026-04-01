@@ -1,9 +1,12 @@
 #include "HashTable.h"
 #include <mutex>
-HashTable::HashTable() : buckets(16), bucketsz(16), sz(0), loadfactor(0.75) {
+
+template<typename T>
+HashTable<T>::HashTable() : buckets(16), bucketsz(16), sz(0), loadfactor(0.75) {
 }
 
-uint32_t HashTable::gethash(std::string_view key){
+template<typename T>
+uint32_t HashTable<T>::gethash(std::string_view key){
     uint32_t h = 0;
     for (const char &c : key) {
         h = h * 131 + static_cast<unsigned char>(c);
@@ -13,7 +16,9 @@ uint32_t HashTable::gethash(std::string_view key){
     h ^= h >> 15;
     return h;
 }
-HashTable::Node *HashTable::find(std::string_view key) {
+
+template<typename T>
+typename HashTable<T>::Node *HashTable<T>::find(std::string_view key) {
     size_t idx = gethash(key) % bucketsz;
     for (auto &node : buckets[idx]) {
         if (node.key == key)
@@ -22,7 +27,8 @@ HashTable::Node *HashTable::find(std::string_view key) {
     return nullptr;
 }
 
-std::optional<std::string> HashTable::get(std::string_view key) {
+template<typename T>
+std::optional<T> HashTable<T>::get(std::string_view key) {
     Node *p = find(key);
     if (p != nullptr)
         return p->value;
@@ -30,7 +36,8 @@ std::optional<std::string> HashTable::get(std::string_view key) {
         return std::nullopt;
 }
 
-void HashTable::set(std::string key, std::string value) {
+template<typename T>
+void HashTable<T>::set(std::string key,T value) {
     Node *p = find(key);
     if (p != nullptr) {
         p->value = std::move(value);
@@ -44,7 +51,8 @@ void HashTable::set(std::string key, std::string value) {
     }
 }
 
-void HashTable::rehash() {
+template<typename T>
+void HashTable<T>::rehash() {
     size_t oldbucketsz = bucketsz;
     bucketsz <<= 1;
     decltype(buckets) newbuckets(bucketsz);
@@ -57,7 +65,8 @@ void HashTable::rehash() {
     buckets.swap(newbuckets);
 }
 
-bool HashTable::erase(std::string_view key) {
+template<typename T>
+bool HashTable<T>::erase(std::string_view key) {
     size_t idx = gethash(key) % bucketsz;
     for (auto it = buckets[idx].begin(); it != buckets[idx].end(); it++) {
         if (it->key == key) {
@@ -69,6 +78,9 @@ bool HashTable::erase(std::string_view key) {
     return false;
 }
 
-bool HashTable::checkexist(std::string_view key){
+template<typename T>
+bool HashTable<T>::checkexist(std::string_view key){
     return find(key)!=nullptr;
 }
+
+template class HashTable<std::string>;
