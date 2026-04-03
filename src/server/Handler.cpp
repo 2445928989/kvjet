@@ -55,7 +55,7 @@ std::string Handler::GET(resp::RespValue request, KVStore<resp::RespValue> &kvst
         if (result.has_value()) {
             return std::move(resp::encode(result.value()));
         } else {
-            resp::RespValue ret(resp::BulkString(nullptr));
+            resp::RespValue ret(resp::BulkString(std::nullopt));
             return std::move(resp::encode(ret));
         }
     } else {

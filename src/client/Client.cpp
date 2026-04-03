@@ -1,7 +1,9 @@
 // Client.cpp
 #include "Client.h"
+#include "../resp/RespEncoder.h"
 #include <climits>
 #include <iostream>
+#include <sstream>
 
 Client::Client(const std::string &ip, uint16_t port) : sock() {
     sock.connect(ip, port);
@@ -45,11 +47,72 @@ std::string Client::recv() {
 
 void Client::run() {
     std::string request;
+    std::cout << ">>> ";
     while (std::getline(std::cin, request)) {
-        send(request);
-        std::cout << recv() << '\n';
+        if (!request.empty()) {
+            resp::RespValue req = std::move(handle(std::move(request)));
+            if (auto it = std::get_if<resp::Error>(req.getPtr())) {
+                std::cout << it->value << '\n';
+                if (it->value == "GoodBye.") {
+                    return;
+                }
+            } else {
+                send(std::move(resp::encode(req)));
+                std::cout << recv() << '\n';
+            }
+        }
+        std::cout << ">>> ";
     }
 }
 
-resp::RespValue handle(std::string) {
+resp::RespValue Client::handle(std::string req) {
+    std::vector<std::string> reqv;
+    std::stringstream ss(req);
+    std::string tmp;
+    while (ss >> tmp) {
+        reqv.push_back(std::move(tmp));
+    }
+    if (reqv[0] == "GET") {
+        if (reqv.size() != 2) {
+            return std::move(resp::RespValue(resp::Error("Usage: GET key")));
+        }
+        resp::Array ret;
+        ret.value = std::vector<std::unique_ptr<resp::RespValue>>();
+        ret.value.value().push_back(std::make_unique<resp::RespValue>(resp::SimpleString(std::move(reqv[0]))));
+        ret.value.value().push_back(std::make_unique<resp::RespValue>(resp::SimpleString(std::move(reqv[1]))));
+        return std::move(ret);
+    } else if (reqv[0] == "SET") {
+        if (reqv.size() != 3) {
+            return std::move(resp::RespValue(resp::Error("Usage: SET key value")));
+        }
+        resp::Array ret;
+        ret.value = std::vector<std::unique_ptr<resp::RespValue>>();
+        ret.value.value().push_back(std::make_unique<resp::RespValue>(resp::SimpleString(std::move(reqv[0]))));
+        ret.value.value().push_back(std::make_unique<resp::RespValue>(resp::SimpleString(std::move(reqv[1]))));
+        ret.value.value().push_back(std::make_unique<resp::RespValue>(resp::SimpleString(std::move(reqv[2]))));
+        return std::move(ret);
+    } else if (reqv[0] == "MGET") {
+
+    } else if (reqv[0] == "EXSITS") {
+
+    } else if (reqv[0] == "HELP") {
+        std::string help = "Commands:\n"
+                           "    SET key value        Set a key-value pair\n"
+                           "    GET key              Get value by key\n"
+                           "    DEL key [key ...]    Delete one or more keys\n"
+                           "    EXISTS key [key ...] Check if keys exist\n"
+                           "    MGET key [key ...]   Get multiple values\n"
+                           "    HELP                 Show this message\n"
+                           "    EXIT                 Disconnect and exit\n\n"
+                           "Examples:\n"
+                           "    SET mykey hello\n"
+                           "    GET mykey\n"
+                           "    DEL mykey\n"
+                           "    MGET key1 key2 key3";
+        return std::move(resp::RespValue(resp::Error(std::move(help))));
+    } else if (reqv[0] == "EXIT") {
+        return std::move(resp::RespValue(resp::Error("GoodBye.")));
+    } else {
+        return std::move(resp::RespValue(resp::Error("Unknown command. Type HELP for assistance.")));
+    }
 }
