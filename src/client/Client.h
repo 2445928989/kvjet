@@ -20,6 +20,9 @@ public:
     std::string recv();
     // 运行循环
     void run();
+    // 处理指令
+    // 指令错误时返回一个resp::Error
+    resp::RespValue handle(std::string);
 
 private:
     Socket sock;

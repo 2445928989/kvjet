@@ -9,15 +9,15 @@ std::string Handler::handle(resp::RespValue request, KVStore<resp::RespValue> &k
         }
         if (auto command = std::get_if<resp::SimpleString>((*it->value->begin())->getPtr())) {
             if (command->value == "GET") {
-                return std::move(GET(std::move(request), kvstore));
+                return GET(std::move(request), kvstore);
             } else if (command->value == "SET") {
-                return std::move(SET(std::move(request), kvstore));
+                return SET(std::move(request), kvstore);
             } else if (command->value == "DEL") {
-                return std::move(DEL(std::move(request), kvstore));
+                return DEL(std::move(request), kvstore);
             } else if (command->value == "EXISTS") {
-                return std::move(EXISTS(std::move(request), kvstore));
+                return EXISTS(std::move(request), kvstore);
             } else if (command->value == "MGET") {
-                return std::move(MGET(std::move(request), kvstore));
+                return MGET(std::move(request), kvstore);
             } else {
                 throw std::runtime_error("Unknown request!!");
             }
@@ -39,7 +39,7 @@ std::string Handler::SET(resp::RespValue request, KVStore<resp::RespValue> &kvst
     if (auto key_ = std::get_if<resp::SimpleString>(key->getPtr())) {
         kvstore.set(std::move(key_->value), std::move(*value));
         resp::RespValue ret(resp::SimpleString("OK"));
-        return std::move(resp::encode(ret));
+        return resp::encode(ret);
     } else {
         throw std::runtime_error("SET: Key is not a SimpleString");
     }
@@ -51,13 +51,12 @@ std::string Handler::GET(resp::RespValue request, KVStore<resp::RespValue> &kvst
     }
     auto key = std::move(it->value.value()[1]);
     if (auto key_ = std::get_if<resp::SimpleString>(key->getPtr())) {
-        // TODO: KVStore和HashTable的get方法返回的应该是一个引用，然后这里就可以改auto &了，目前还有一次拷贝构造
         auto result = kvstore.get(std::move(key_->value));
         if (result.has_value()) {
-            return std::move(resp::encode(result.value()));
+            return resp::encode(result.value());
         } else {
-            resp::RespValue ret(resp::BulkString(nullptr));
-            return std::move(resp::encode(ret));
+            resp::RespValue ret(resp::BulkString(std::nullopt));
+            return resp::encode(ret);
         }
     } else {
         throw std::runtime_error("GET: Key is not a SimpleString");
@@ -70,7 +69,7 @@ std::string Handler::DEL(resp::RespValue request, KVStore<resp::RespValue> &kvst
     if (sz == 1) {
         throw std::runtime_error("DEL: At least one key");
     }
-    for (int i = 1; i < sz; i++) {
+    for (size_t i = 1; i < sz; i++) {
         auto key = std::move(it->value.value()[i]);
         if (auto key_ = std::get_if<resp::SimpleString>(key->getPtr())) {
             ret += kvstore.del(std::move(key_->value));
@@ -87,7 +86,7 @@ std::string Handler::EXISTS(resp::RespValue request, KVStore<resp::RespValue> &k
     if (sz == 1) {
         throw std::runtime_error("EXISTS: At least one key");
     }
-    for (int i = 1; i < sz; i++) {
+    for (size_t i = 1; i < sz; i++) {
         auto key = std::move(it->value.value()[i]);
         if (auto key_ = std::get_if<resp::SimpleString>(key->getPtr())) {
             ret += kvstore.get(std::move(key_->value)).has_value();
@@ -104,10 +103,15 @@ std::string Handler::MGET(resp::RespValue request, KVStore<resp::RespValue> &kvs
     if (sz == 1) {
         throw std::runtime_error("MGET: At least one key");
     }
-    for (int i = 1; i < sz; i++) {
+    for (size_t i = 1; i < sz; i++) {
         auto key = std::move(it->value.value()[i]);
         if (auto key_ = std::get_if<resp::SimpleString>(key->getPtr())) {
-            ret.value->push_back(std::make_unique<resp::RespValue>(kvstore.get(std::move(key_->value))));
+            auto result = kvstore.get(std::move(key_->value));
+            if (result.has_value()) {
+                ret.value->push_back(std::make_unique<resp::RespValue>(std::move(result.value())));
+            } else {
+                ret.value->push_back(std::make_unique<resp::RespValue>(resp::BulkString(nullptr)));
+            }
         } else {
             throw std::runtime_error("MGET: Key is not a SimpleString");
         }

@@ -5,6 +5,7 @@
 #include"HashTable.h"
 #include<optional>
 #include"LRU.h"
+#include"../resp/RespValue.h"
 template<typename T>
 class KVStore{
 public:

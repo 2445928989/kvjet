@@ -10,7 +10,12 @@ int main(int argc, char *argv[]) {
         Server server(atoi(argv[1]));
         server.run();
     } catch (const std::exception &e) {
-        std::cerr << e.what() << '\n';
+        std::cerr << "CAUGHT EXCEPTION: " << e.what() << '\n';
+        std::cerr.flush();
+        return 1;
+    } catch (...) {
+        std::cerr << "CAUGHT UNKNOWN EXCEPTION\n";
+        std::cerr.flush();
         return 1;
     }
     return 0;

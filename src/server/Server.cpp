@@ -2,6 +2,7 @@
 #include "Server.h"
 #include "Handler.h"
 #include <climits>
+#include <iostream>
 #include <sys/fcntl.h>
 Server::Server(uint16_t port) : server_sock(), threadPool(16) {
     memset(events, 0, sizeof(events));
@@ -24,6 +25,7 @@ Server::Server(uint16_t port) : server_sock(), threadPool(16) {
     if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server_sock.fd(), &event) == -1) {
         throw std::runtime_error("Epoll add error: " + std::string(strerror(errno)));
     }
+    std::cout << "Server Started" << std::endl;
 }
 Server::~Server() {
     if (epoll_fd != -1) {
@@ -70,7 +72,7 @@ std::string Server::recv(const Socket &sock) {
         } else if (n == 0) {
             epoll_ctl(epoll_fd, EPOLL_CTL_DEL, sock.fd(), nullptr);
             connections.erase(sock.fd());
-            return std::move(ret);
+            return ret;
         } else {
             if (errno != EAGAIN && errno != EWOULDBLOCK) {
                 if (epoll_ctl(epoll_fd, EPOLL_CTL_DEL, sock.fd(), nullptr) == -1) {
@@ -78,7 +80,7 @@ std::string Server::recv(const Socket &sock) {
                 }
                 connections.erase(sock.fd());
             }
-            return std::move(ret);
+            return ret;
         }
     }
 }
@@ -106,17 +108,22 @@ bool Server::accept() {
         throw std::runtime_error("Epoll add error: " + std::string(strerror(errno)));
     }
     connections[fd] = std::move(sock);
+    std::cout << "Connected to: " << fd << std::endl;
     return true;
 }
 void Server::epoll_step() {
     int event_num = epoll_wait(epoll_fd, events, MAX_EVENTS, 100);
-    for (size_t i = 0; i < event_num; i++) {
+    if (event_num == -1) {
+        throw std::runtime_error("Epoll wait error");
+    }
+    for (size_t i = 0; i < (size_t)event_num; i++) {
         if (events[i].data.fd == server_sock.fd()) {
             while (accept()) {
             }
         } else {
             int client_fd = events[i].data.fd;
             std::string str = recv(connections[client_fd]);
+            std::cout << "Recieved: " << str << std::endl;
             if (str.empty()) {
                 continue;
             }

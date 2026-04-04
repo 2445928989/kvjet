@@ -1,4 +1,5 @@
 #include "ThreadPool.h"
+#include <iostream>
 ThreadPool::ThreadPool(int threadCount) : stop(false) {
     for (int i = 0; i < threadCount; i++) {
         workers.emplace_back([this] {
@@ -20,21 +21,8 @@ ThreadPool::ThreadPool(int threadCount) : stop(false) {
     }
 }
 
-template <typename T, typename... Args>
-auto ThreadPool::enqueue(T &&f, Args &&...args) -> std::future<typename std::invoke_result<T, Args...>::type> {
-    using returntype = typename std::invoke_result<T, Args...>::type;
-    auto task = std::make_shared<std::packaged_task<returntype()>>(
-        std::bind(std::forward<T>(f), std::forward<Args>(args)...));
-    std::future<returntype> res = task->get_future();
-    {
-        std::unique_lock<std::mutex> lock(queueMutex);
-        if (stop) {
-            throw std::runtime_error("stop!!");
-        }
-        tasks.emplace([task]() { (*task)(); });
-    }
-    cv.notify_one();
-    return res;
+ThreadPool::~ThreadPool() {
+    shutdownnow();
 }
 
 void ThreadPool::shutdown() {

@@ -78,10 +78,10 @@ namespace resp {
                 break;
             case WaitLFSZ:
                 if (c == '\n') {
-                    if (auto it = std::get_if<Array>(node.value.getPtr())) {
+                    if (std::holds_alternative<Array>(node.value.get())) {
                         push(std::move(node));
                         state = WaitType;
-                    } else if (auto it = std::get_if<BulkString>(node.value.getPtr())) {
+                    } else if (std::holds_alternative<BulkString>(node.value.get())) {
                         state = ReadBulk;
                     } else {
                         throw std::runtime_error("Parser Error!!");

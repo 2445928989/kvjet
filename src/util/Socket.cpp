@@ -81,15 +81,17 @@ Socket Socket::accept() {
     while (true) {
         client_fd = ::accept(fd_, nullptr, nullptr);
         if (client_fd == -1) {
-            if (errno != EAGAIN && errno != EWOULDBLOCK)
+            if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)
                 throw std::runtime_error("Accept error: " + std::string(strerror(errno)));
             else if (errno == EINTR)
                 continue;
             else
-                return std::move(Socket(client_fd));
+                return Socket(client_fd);
+        } else {
+            break;
         }
     }
-    return std::move(Socket(client_fd));
+    return Socket(client_fd);
 }
 
 Socket::Socket(int fd) noexcept : fd_(fd) {}
