@@ -4,7 +4,7 @@
 #include <climits>
 #include <iostream>
 #include <sys/fcntl.h>
-Server::Server(uint16_t port) : server_sock(), threadPool(16) {
+Server::Server(uint16_t port) : server_sock(), threadPool(2) {
     memset(events, 0, sizeof(events));
     server_sock.bind("0.0.0.0", port);
     server_sock.listen();
@@ -123,7 +123,6 @@ void Server::epoll_step() {
         } else {
             int client_fd = events[i].data.fd;
             std::string str = recv(connections[client_fd]);
-            std::cout << "Recieved: " << str << std::endl;
             if (str.empty()) {
                 continue;
             }

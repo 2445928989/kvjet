@@ -1,8 +1,7 @@
 // Server.h
 #pragma once
 #include "../resp/RespValue.h"
-#include "../util/HashTable.h"
-#include "../util/KVStore.h"
+#include "../util/KVStore1.h"
 #include "../util/Socket.h"
 #include "../util/ThreadPool.h"
 #include <cerrno>
@@ -34,7 +33,7 @@ public:
     std::string recv(const Socket &sock);
 
     // 处理来自socket的请求
-    void handleCommand(int sock,resp::RespValue value);
+    void handleCommand(int sock, resp::RespValue value);
 
     // 接受socket连接
     bool accept();

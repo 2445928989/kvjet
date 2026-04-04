@@ -1,8 +1,10 @@
 // Client.cpp
 #include "Client.h"
 #include "../resp/RespEncoder.h"
+#include <chrono>
 #include <climits>
 #include <iostream>
+#include <random>
 #include <sstream>
 
 Client::Client(const std::string &ip, uint16_t port) : sock() {
@@ -116,4 +118,55 @@ resp::RespValue Client::handle(std::string req) {
         return resp::RespValue(resp::Error("Unknown command. Type HELP for assistance."));
     }
     return resp::RespValue(resp::Error("Unknown Error"));
+}
+std::mt19937 rnd(time(0));
+void Client::benchmark(int ops, const std::string &op_type) {
+    std::cout << "Start benchmark..." << std::endl;
+
+    int batch_size = 5000;
+    std::vector<std::string> requests;
+    auto start = std::chrono::high_resolution_clock::now();
+
+    for (int i = 0; i < ops; i++) {
+        std::string req;
+        if (op_type == "set") {
+            req = "SET key" + std::to_string(rnd()) + " value" + std::to_string(rnd());
+        } else if (op_type == "get") {
+            req = "GET key" + std::to_string(rnd());
+        } else if (op_type == "mixed") {
+            if (i % 2) {
+                req = "SET key" + std::to_string(rnd()) + " value" + std::to_string(rnd());
+            } else {
+                req = "GET key" + std::to_string(rnd());
+            }
+        }
+
+        resp::RespValue request = handle(std::move(req));
+        requests.push_back(resp::encode(request));
+
+        if (requests.size() >= batch_size || i == ops - 1) {
+            for (const auto &r : requests) {
+                send(r);
+            }
+            int remaining = requests.size();
+            while (remaining > 0) {
+                char buf[4096];
+                ssize_t n = ::recv(sock.fd(), buf, sizeof(buf), 0);
+                if (n > 0) {
+                    sock.parser().append(std::string(buf, n));
+                    while (sock.parser().hasResult()) {
+                        sock.parser().pop();
+                        remaining--;
+                    }
+                }
+            }
+            requests.clear();
+        }
+    }
+
+    auto end = std::chrono::high_resolution_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+    double qps = (ops * 1000.0) / elapsed;
+
+    std::cout << "QPS: " << qps << std::endl;
 }

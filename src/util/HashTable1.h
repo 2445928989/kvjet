@@ -19,7 +19,8 @@ private:
     struct Node {
         std::string key;
         T value;
-        Node():key(""){};
+        Node():key(""){}
+        Node(std::string key,T value):key(std::move(key)),value(std::move(value)){}
     };
 
     std::vector<Node> buckets;

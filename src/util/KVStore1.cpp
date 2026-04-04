@@ -1,5 +1,5 @@
 #include "KVStore.h"
-
+#include "HashTable1.h"
 template<typename T>
 KVStore<T>::KVStore(size_t shardCount):shardCount(shardCount){
     for(int i=0;i<shardCount;i++){
