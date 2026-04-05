@@ -8,13 +8,11 @@ HashTable1<T>::HashTable1() : buckets(16), bucketsz(16), sz(0), loadfactor(0.75)
 
 template <typename T>
 uint32_t HashTable1<T>::gethash(std::string_view key) {
-    uint32_t h = 0;
-    for (const char &c : key) {
-        h = h * 131 + static_cast<unsigned char>(c);
+    uint32_t h = 2654435761U;
+    for (char c : key) {
+        h ^= (uint32_t)c;
+        h *= 16777619U;
     }
-    h ^= h >> 16;
-    h *= 0x7feb352d;
-    h ^= h >> 15;
     return h;
 }
 
@@ -22,32 +20,29 @@ template <typename T>
 typename HashTable1<T>::Node *HashTable1<T>::find(std::string_view key) {
     size_t idx = gethash(key) % bucketsz;
     size_t raw = idx;
+    Node *first_del = nullptr;
     do {
-        if (buckets[idx].key == key)
+        if (buckets[idx].status == EMPTY) {
+            if (first_del == nullptr)
+                return &buckets[idx];
+            else
+                return first_del;
+        }
+        if (buckets[idx].status == DELETED) {
+            if (first_del == nullptr)
+                first_del = &buckets[idx];
+        } else if (buckets[idx].key == key)
             return &buckets[idx];
         idx++;
         idx %= bucketsz;
     } while (idx != raw);
-    return nullptr;
-}
-
-template <typename T>
-size_t HashTable1<T>::findnextfree(std::string_view key) {
-    size_t idx = gethash(key) % bucketsz;
-    size_t raw = idx;
-    do {
-        if (buckets[idx].key == "")
-            return idx;
-        idx++;
-        idx %= bucketsz;
-    } while (idx != raw);
-    throw std::runtime_error("cannot find next free pos!");
+    throw std::runtime_error("Empty position not found");
 }
 
 template <typename T>
 std::optional<T> HashTable1<T>::get(std::string_view key) {
     Node *p = find(key);
-    if (p != nullptr)
+    if (p->status == OCCUPIED)
         return std::optional<T>(std::move(p->value));
     else
         return std::nullopt;
@@ -56,11 +51,10 @@ std::optional<T> HashTable1<T>::get(std::string_view key) {
 template <typename T>
 void HashTable1<T>::set(std::string key, T value) {
     Node *p = find(key);
-    if (p != nullptr) {
+    if (p->status == OCCUPIED) {
         p->value = std::move(value);
     } else {
-        size_t idx = findnextfree(key);
-        buckets[idx] = {std::move(key), std::move(value)};
+        *p = Node(std::move(key), std::move(value));
         sz++;
         double nowloadfactor = 1.0 * sz / bucketsz;
         if (nowloadfactor > loadfactor)
@@ -76,19 +70,19 @@ void HashTable1<T>::rehash() {
     swap(oldbuckets, buckets);
     for (int i = 0; i < oldbucketsz; i++) {
         auto &node = oldbuckets[i];
-        if (node.key == "")
+        if (node.status != OCCUPIED)
             continue;
-        size_t idx = findnextfree(node.key);
-        buckets[idx] = {std::move(node.key), std::move(node.value)};
+        Node *p = find(node.key);
+        *p = {std::move(node.key), std::move(node.value)};
     }
 }
 
 template <typename T>
 bool HashTable1<T>::erase(std::string_view key) {
-    auto t = find(key);
-    if (t != nullptr) {
+    Node *t = find(key);
+    if (t->status == OCCUPIED) {
         --sz;
-        t->key = "";
+        t->status = DELETED;
         return true;
     }
     return false;
@@ -96,7 +90,7 @@ bool HashTable1<T>::erase(std::string_view key) {
 
 template <typename T>
 bool HashTable1<T>::checkexist(std::string_view key) {
-    return find(key) != nullptr;
+    return find(key)->status == OCCUPIED;
 }
 
 template class HashTable1<std::string>;

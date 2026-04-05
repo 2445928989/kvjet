@@ -4,7 +4,7 @@
 #include <shared_mutex>
 #include <string>
 #include <vector>
-template<typename T>
+template <typename T>
 class HashTable1 {
 public:
     HashTable1();
@@ -15,12 +15,19 @@ public:
     bool erase(std::string_view key);
     static uint32_t gethash(std::string_view key);
     bool checkexist(std::string_view key);
+    enum stat {
+        DELETED,
+        EMPTY,
+        OCCUPIED
+    };
+
 private:
     struct Node {
         std::string key;
         T value;
-        Node():key(""){}
-        Node(std::string key,T value):key(std::move(key)),value(std::move(value)){}
+        stat status;
+        Node() : key(""), status(EMPTY) {}
+        Node(std::string key, T value) : key(std::move(key)), value(std::move(value)), status(OCCUPIED) {}
     };
 
     std::vector<Node> buckets;
@@ -28,10 +35,8 @@ private:
 
     // 扩容
     void rehash();
-    // 查找key对应的位置在哪，没有返回nullptr
+    // 查找key对应的位置在哪，没有返回第一个DELETED的位置
     Node *find(std::string_view key);
-    //找下一个可以放的位置
-    size_t findnextfree(std::string_view key);
     // 负载因子=元素数量/桶数量
     double loadfactor;
 };

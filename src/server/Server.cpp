@@ -59,7 +59,7 @@ ssize_t Server::send(const std::string &str, const Socket &sock) {
 }
 
 std::string Server::recv(const Socket &sock) {
-    char buf[1024];
+    char buf[65536];
     std::string ret;
     ssize_t n;
     while (true) {
@@ -112,7 +112,7 @@ bool Server::accept() {
     return true;
 }
 void Server::epoll_step() {
-    int event_num = epoll_wait(epoll_fd, events, MAX_EVENTS, 100);
+    int event_num = epoll_wait(epoll_fd, events, MAX_EVENTS, 0);
     if (event_num == -1) {
         throw std::runtime_error("Epoll wait error");
     }
