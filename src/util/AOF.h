@@ -1,5 +1,6 @@
 #pragma once
 #include "KVStore.h"
+#include "../resp/RespParser.h"
 #include <filesystem>
 #include <fstream>
 #include <mutex>
@@ -16,4 +17,5 @@ private:
     std::ofstream file;
     std::mutex mut;
     std::string filename;
+    resp::RespParser parser;
 };

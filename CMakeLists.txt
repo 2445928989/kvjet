@@ -23,8 +23,6 @@ set(UTIL_SOURCES
     src/util/ThreadPool.cpp
     src/util/HashTable.cpp
     src/util/KVStore.cpp
-    src/util/HashTable1.cpp
-    src/util/KVStore1.cpp
     src/util/AOF.cpp
     src/util/LRU.cpp
 )

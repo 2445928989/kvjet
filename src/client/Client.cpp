@@ -130,14 +130,14 @@ void Client::benchmark(int ops, const std::string &op_type) {
     for (int i = 0; i < ops; i++) {
         std::string req;
         if (op_type == "set") {
-            req = "SET key" + std::to_string(rnd()) + " value" + std::to_string(rnd());
+            req = "SET key" + std::to_string(rnd() % 100000) + " value" + std::to_string(rnd() % 100000);
         } else if (op_type == "get") {
-            req = "GET key" + std::to_string(rnd());
+            req = "GET key" + std::to_string(rnd() % 100000);
         } else if (op_type == "mixed") {
             if (i % 2) {
-                req = "SET key" + std::to_string(rnd()) + " value" + std::to_string(rnd());
+                req = "SET key" + std::to_string(rnd() % 100000) + " value" + std::to_string(rnd() % 100000);
             } else {
-                req = "GET key" + std::to_string(rnd());
+                req = "GET key" + std::to_string(rnd() % 100000);
             }
         }
 

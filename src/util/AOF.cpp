@@ -17,8 +17,9 @@ void AOF::append(std::string_view text) {
     file << text << "\n";
     file.flush();
 }
-void AOF::recover(KVStore<std::string> *kv){
-    if(kv==nullptr) return;
+void AOF::recover(KVStore<std::string> *kv) {
+    if (kv == nullptr)
+        return;
     std::lock_guard lock(mut);
     std::ifstream in(filename, std::ios::binary);
     if (!in.is_open())
