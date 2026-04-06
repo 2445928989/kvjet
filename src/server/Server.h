@@ -1,6 +1,7 @@
 // Server.h
 #pragma once
 #include "../resp/RespValue.h"
+#include "../util/AOF.h"
 #include "../util/KVStore.h"
 #include "../util/Socket.h"
 #include "../util/ThreadPool.h"
@@ -53,4 +54,5 @@ private:
     epoll_event events[MAX_EVENTS];
     KVStore<resp::RespValue> kvstore;
     ThreadPool threadPool;
+    AOF aof;
 };

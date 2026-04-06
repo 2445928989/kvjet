@@ -4,7 +4,7 @@
 #include <climits>
 #include <iostream>
 #include <sys/fcntl.h>
-Server::Server(uint16_t port) : server_sock(), threadPool(2) {
+Server::Server(uint16_t port) : server_sock(), threadPool(2), kvstore(), aof("data/aof.dat") {
     memset(events, 0, sizeof(events));
     server_sock.bind("0.0.0.0", port);
     server_sock.listen();
@@ -25,6 +25,7 @@ Server::Server(uint16_t port) : server_sock(), threadPool(2) {
     if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server_sock.fd(), &event) == -1) {
         throw std::runtime_error("Epoll add error: " + std::string(strerror(errno)));
     }
+    aof.recover(&kvstore);
     std::cout << "Server Started" << std::endl;
 }
 Server::~Server() {
@@ -85,7 +86,7 @@ std::string Server::recv(const Socket &sock) {
     }
 }
 void Server::handleCommand(int sock, resp::RespValue value) {
-    std::string message = Handler::handle(std::move(value), kvstore);
+    std::string message = Handler::handle(std::move(value), kvstore, aof);
     std::unique_lock<std::mutex> lock(queueMutex);
     message_queue.emplace(std::move(message), sock);
 }

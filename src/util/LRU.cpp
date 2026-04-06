@@ -26,10 +26,10 @@ std::optional<std::string> LRU::set(std::string x){
         lst.emplace_back(x);
         hash.set(x,prev(lst.end()));
         if(lst.size()>maxsz){
-            auto erasestr=*lst.begin();
+            auto erasestr=std::move(*lst.begin());
             lst.erase(lst.begin());
             hash.erase(erasestr);
-            return erasestr;
+            return std::move(erasestr);
         }else{
             return std::nullopt;
         }

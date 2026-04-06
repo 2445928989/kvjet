@@ -8,7 +8,8 @@
 template <typename T>
 class KVStore {
 public:
-    void set(std::string key, T value);
+    // 若LRI有淘汰键，则返回
+    std::optional<std::string> set(std::string key, T value);
     std::optional<T> get(std::string_view key);
     bool del(std::string_view key);
     bool checkexist(std::string_view key);

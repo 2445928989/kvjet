@@ -1,5 +1,4 @@
 #pragma once
-#define _GNU_SOURCE
 #include <condition_variable>
 #include <functional>
 #include <future>

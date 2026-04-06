@@ -82,6 +82,7 @@ target_include_directories(kvserver PRIVATE ${PROJECT_SOURCE_DIR}/src)
 add_executable(kvclient
     src/client_main.cpp
     ${CLIENT_SOURCES}
+    ${HANDLER_SOURCES}
 )
 target_link_libraries(kvclient PRIVATE Threads::Threads ${JEMALLOC_LIBRARIES})
 target_include_directories(kvclient PRIVATE ${PROJECT_SOURCE_DIR}/src)
