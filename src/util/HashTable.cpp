@@ -100,7 +100,7 @@ void HashTable<T>::writetofile(std::string filename) requires std::same_as<T, re
         if (p.has_parent_path()) {
             std::filesystem::create_directories(p.parent_path());
         }
-        file.open(filename, std::ios::app | std::ios::binary);
+        file.open(filename, std::ios::binary);
     }
     if (!file.is_open()) {
         throw std::runtime_error("File open failed.");
@@ -109,25 +109,18 @@ void HashTable<T>::writetofile(std::string filename) requires std::same_as<T, re
     uint32_t writebucketsz=bucketsz;
     file.write(reinterpret_cast<const char*>(&writebucketsz),sizeof(writebucketsz));
     //buckets有效元素大小
-    uint32_t validsz=0;
-    for(uint32_t i=0;i<bucketsz;i++){
-        const auto &node=buckets[i];
-        if(node.status==EMPTY) continue;
-        validsz++;
-    }
+    uint32_t validsz=sz;
     file.write(reinterpret_cast<const char*>(&validsz),sizeof(validsz));
     for(uint32_t i=0;i<bucketsz;i++){
         const auto &node=buckets[i];
-        if(node.status==EMPTY) continue;
+        if(node.status==EMPTY||node.status==DELETED) continue;
         //下标
         file.write(reinterpret_cast<const char*>(&i),sizeof(i));
-        //status
-        file.write(reinterpret_cast<const char*>(&node.status),sizeof(node.status));
         //key的大小
         uint32_t keysize=node.key.size();
         file.write(reinterpret_cast<const char*>(&keysize),sizeof(keysize));
         //value的大小
-        std::string value=resp.encode(buckets[i].value);
+        std::string value=resp::encode(buckets[i].value);
         uint32_t valuesize=value.size();
         file.write(reinterpret_cast<const char*>(&valuesize),sizeof(valuesize));
         //写入key内容
@@ -143,50 +136,47 @@ void HashTable<T>::writetofile(std::string filename) requires std::same_as<T, re
 
 template <typename T>
 void HashTable<T>::readfromfile(std::string filename) requires std::same_as<T, resp::RespValue>{
-    std::ofstream file(filename,std::ios::binary);
-    if (!file.is_open()) {
-        auto p = std::filesystem::path(filename);
-        if (p.has_parent_path()) {
-            std::filesystem::create_directories(p.parent_path());
-        }
-        file.open(filename, std::ios::app | std::ios::binary);
-    }
+    std::ifstream file(filename,std::ios::binary);
     if (!file.is_open()) {
         throw std::runtime_error("File open failed.");
     }
     //buckets大小
     uint32_t readbucketsz;
-    file.read(reinterpret_cast<const char*>(&readbucketsz),sizeof(readbucketsz));
+    file.read(reinterpret_cast<char*>(&readbucketsz),sizeof(readbucketsz));
     bucketsz=readbucketsz;
-    buckets.resize(bucketsz);
+    buckets.assign(bucketsz,Node());
     //buckets有效元素大小
     uint32_t validsz;
-    file.read(reinterpret_cast<const char*>(&validsz),sizeof(validsz));
+    file.read(reinterpret_cast<char*>(&validsz),sizeof(validsz));
+    sz=validsz;
     for(uint32_t i=0;i<validsz;i++){
         //下标
         uint32_t idx;
-        file.read(reinterpret_cast<const char*>(&idx),sizeof(idx));
+        file.read(reinterpret_cast<char*>(&idx),sizeof(idx));
         //status
-        stat status;
-        file.read(reinterpret_cast<const char*>(&status),sizeof(status));
-        buckets[idx].status=status;
+        buckets[idx].status=OCCUPIED;
         //key的大小
         uint32_t keysize;
-        file.read(reinterpret_cast<const char*>(&keysize),sizeof(keysize));
+        file.read(reinterpret_cast<char*>(&keysize),sizeof(keysize));
         //value的大小
-        uint32_t valuesize=value.size();
-        file.read(reinterpret_cast<const char*>(&valuesize),sizeof(valuesize));
-        //写入key内容
+        uint32_t valuesize;
+        file.read(reinterpret_cast<char*>(&valuesize),sizeof(valuesize));
+        //读入key内容
         if(keysize>0){
             buckets[idx].key.resize(keysize);
             file.read(&buckets[idx].key[0],keysize);
         }
-        //写入value内容
+        //读入value内容
         if(valuesize>0){
             std::string value;
-            value.resize(keysize);
-            file.write(&value[0],valuesize);
-            buckets[idx].value=resp::RespValue(value);
+            value.resize(valuesize);
+            file.read(&value[0],valuesize);
+            resp::RespParser parser;
+            parser.append(value);
+            if(!parser.hasResult()){
+                throw std::runtime_error("Parser has no result!!!!!");
+            }
+            buckets[idx].value=parser.getResult().value();
         }
     }
 }

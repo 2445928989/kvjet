@@ -5,7 +5,11 @@
 #include <string>
 #include <vector>
 #include "../resp/RespValue.h"
+#include "../resp/RespEncoder.h"
+#include "../resp/RespParser.h"
 #include <concepts>
+#include <fstream>
+#include <filesystem>
 template <typename T>
 class HashTable {
 public:
