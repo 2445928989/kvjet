@@ -4,6 +4,8 @@
 #include <shared_mutex>
 #include <string>
 #include <vector>
+#include "../resp/RespValue.h"
+#include <concepts>
 template <typename T>
 class HashTable {
 public:
@@ -15,6 +17,8 @@ public:
     bool erase(std::string_view key);
     static uint32_t gethash(std::string_view key);
     bool checkexist(std::string_view key);
+    void writetofile(std::string filename) requires (std::same_as<T,resp::RespValue>);
+    void readfromfile(std::string filename) requires (std::same_as<T,resp::RespValue>);
     enum stat {
         DELETED,
         EMPTY,

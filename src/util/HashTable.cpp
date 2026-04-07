@@ -1,5 +1,4 @@
 #include "HashTable.h"
-#include "../resp/RespValue.h"
 #include <mutex>
 #include <stdexcept>
 template <typename T>
@@ -93,6 +92,104 @@ bool HashTable<T>::checkexist(std::string_view key) {
     return find(key)->status == OCCUPIED;
 }
 
+template <typename T>
+void HashTable<T>::writetofile(std::string filename) requires std::same_as<T, resp::RespValue>{
+    std::ofstream file(filename,std::ios::binary);
+    if (!file.is_open()) {
+        auto p = std::filesystem::path(filename);
+        if (p.has_parent_path()) {
+            std::filesystem::create_directories(p.parent_path());
+        }
+        file.open(filename, std::ios::app | std::ios::binary);
+    }
+    if (!file.is_open()) {
+        throw std::runtime_error("File open failed.");
+    }
+    //buckets大小
+    uint32_t writebucketsz=bucketsz;
+    file.write(reinterpret_cast<const char*>(&writebucketsz),sizeof(writebucketsz));
+    //buckets有效元素大小
+    uint32_t validsz=0;
+    for(uint32_t i=0;i<bucketsz;i++){
+        const auto &node=buckets[i];
+        if(node.status==EMPTY) continue;
+        validsz++;
+    }
+    file.write(reinterpret_cast<const char*>(&validsz),sizeof(validsz));
+    for(uint32_t i=0;i<bucketsz;i++){
+        const auto &node=buckets[i];
+        if(node.status==EMPTY) continue;
+        //下标
+        file.write(reinterpret_cast<const char*>(&i),sizeof(i));
+        //status
+        file.write(reinterpret_cast<const char*>(&node.status),sizeof(node.status));
+        //key的大小
+        uint32_t keysize=node.key.size();
+        file.write(reinterpret_cast<const char*>(&keysize),sizeof(keysize));
+        //value的大小
+        std::string value=resp.encode(buckets[i].value);
+        uint32_t valuesize=value.size();
+        file.write(reinterpret_cast<const char*>(&valuesize),sizeof(valuesize));
+        //写入key内容
+        if(keysize>0){
+            file.write(node.key.c_str(),keysize);
+        }
+        //写入value内容
+        if(valuesize>0){
+            file.write(value.c_str(),valuesize);
+        }
+    }
+}
+
+template <typename T>
+void HashTable<T>::readfromfile(std::string filename) requires std::same_as<T, resp::RespValue>{
+    std::ofstream file(filename,std::ios::binary);
+    if (!file.is_open()) {
+        auto p = std::filesystem::path(filename);
+        if (p.has_parent_path()) {
+            std::filesystem::create_directories(p.parent_path());
+        }
+        file.open(filename, std::ios::app | std::ios::binary);
+    }
+    if (!file.is_open()) {
+        throw std::runtime_error("File open failed.");
+    }
+    //buckets大小
+    uint32_t readbucketsz;
+    file.read(reinterpret_cast<const char*>(&readbucketsz),sizeof(readbucketsz));
+    bucketsz=readbucketsz;
+    buckets.resize(bucketsz);
+    //buckets有效元素大小
+    uint32_t validsz;
+    file.read(reinterpret_cast<const char*>(&validsz),sizeof(validsz));
+    for(uint32_t i=0;i<validsz;i++){
+        //下标
+        uint32_t idx;
+        file.read(reinterpret_cast<const char*>(&idx),sizeof(idx));
+        //status
+        stat status;
+        file.read(reinterpret_cast<const char*>(&status),sizeof(status));
+        buckets[idx].status=status;
+        //key的大小
+        uint32_t keysize;
+        file.read(reinterpret_cast<const char*>(&keysize),sizeof(keysize));
+        //value的大小
+        uint32_t valuesize=value.size();
+        file.read(reinterpret_cast<const char*>(&valuesize),sizeof(valuesize));
+        //写入key内容
+        if(keysize>0){
+            buckets[idx].key.resize(keysize);
+            file.read(&buckets[idx].key[0],keysize);
+        }
+        //写入value内容
+        if(valuesize>0){
+            std::string value;
+            value.resize(keysize);
+            file.write(&value[0],valuesize);
+            buckets[idx].value=resp::RespValue(value);
+        }
+    }
+}
 template class HashTable<std::string>;
 template class HashTable<resp::RespValue>;
 template class HashTable<std::list<std::string>::iterator>;
