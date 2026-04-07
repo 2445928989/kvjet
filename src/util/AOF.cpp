@@ -1,6 +1,10 @@
 #include "AOF.h"
+#include "../resp/RespEncoder.h"
+#include "../resp/RespParser.h"
+#include "../server/Handler.h"
 #include <iostream>
-AOF::AOF(std::string filename) : filename(std::move(filename)), file(this->filename, std::ios::app | std::ios::binary) {
+#include <unistd.h>
+AOF::AOF(std::string filename) : filename(std::move(filename)), file(this->filename, std::ios::app | std::ios::binary), last_fsync(std::chrono::steady_clock::now()) {
     if (!file.is_open()) {
         auto p = std::filesystem::path(this->filename);
         if (p.has_parent_path()) {
@@ -14,33 +18,51 @@ AOF::AOF(std::string filename) : filename(std::move(filename)), file(this->filen
 }
 void AOF::append(std::string_view text) {
     std::lock_guard lock(mut);
-    file << text << "\n";
-    file.flush();
+    auto now = std::chrono::steady_clock::now();
+    buffer += text;
+    if (buffer.size() > BUFFER_SIZE ||
+        std::chrono::duration_cast<std::chrono::milliseconds>(now - last_fsync).count() > FSYNC_TIME) {
+        flush();
+    }
 }
-void AOF::recover(KVStore<std::string> *kv){
-    if(kv==nullptr) return;
+void AOF::append(resp::RespValue &value) {
     std::lock_guard lock(mut);
+    auto now = std::chrono::steady_clock::now();
+    buffer += std::move(resp::encode(value));
+    if (buffer.size() > BUFFER_SIZE ||
+        std::chrono::duration_cast<std::chrono::milliseconds>(now - last_fsync).count() > FSYNC_TIME) {
+        flush();
+    }
+}
+void AOF::recover(KVStore<resp::RespValue> *kv) {
+    if (kv == nullptr)
+        return;
     std::ifstream in(filename, std::ios::binary);
     if (!in.is_open())
         return;
-    std::string line;
-    while (std::getline(in, line)) {
-        if (line.empty())
-            continue;
-        std::stringstream sst(line);
-        std::string op;
-        sst >> op;
-        if (op == "SET") {
-            std::string key, value;
-            sst >> key;
-            std::getline(sst, value);
-            if (!value.empty() && value.front() == ' ')
-                value = value.substr(1);
-            kv->set(std::move(key), std::move(value));
-        } else if (op == "DEL") {
-            std::string key;
-            sst >> key;
-            kv->del(key);
+    int count = 0;
+    char buf[BUFFER_SIZE];
+    resp::RespParser parser;
+    while (in.read(buf, sizeof(buf)) || in.gcount() > 0) {
+        size_t sz = in.gcount();
+        parser.append(std::string(buf, sz));
+        while (parser.hasResult()) {
+            auto cmd = parser.getResult().value();
+            Handler::handle(std::move(cmd), *kv);
+            count++;
         }
     }
+    std::cout << "Recovered " << count << " commands from AOF\n";
+}
+
+void AOF::flush() {
+    file << buffer;
+    file.flush();
+    buffer.clear();
+    last_fsync = std::chrono::steady_clock::now();
+}
+
+AOF::~AOF() {
+    std::lock_guard lock(mut);
+    flush();
 }

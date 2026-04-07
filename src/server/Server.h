@@ -1,7 +1,7 @@
 // Server.h
 #pragma once
 #include "../resp/RespValue.h"
-#include "../util/HashTable.h"
+#include "../util/AOF.h"
 #include "../util/KVStore.h"
 #include "../util/Socket.h"
 #include "../util/ThreadPool.h"
@@ -34,7 +34,7 @@ public:
     std::string recv(const Socket &sock);
 
     // 处理来自socket的请求
-    void handleCommand(int sock,resp::RespValue value);
+    void handleCommand(int sock, resp::RespValue value);
 
     // 接受socket连接
     bool accept();
@@ -54,4 +54,5 @@ private:
     epoll_event events[MAX_EVENTS];
     KVStore<resp::RespValue> kvstore;
     ThreadPool threadPool;
+    AOF aof;
 };

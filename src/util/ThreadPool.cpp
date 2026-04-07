@@ -2,7 +2,9 @@
 #include <iostream>
 ThreadPool::ThreadPool(int threadCount) : stop(false) {
     for (int i = 0; i < threadCount; i++) {
-        workers.emplace_back([this] {
+        workers.emplace_back([this, i] {
+            bindToCPU(i % std::thread::hardware_concurrency());
+
             while (1) {
                 std::function<void()> task;
                 {
@@ -51,4 +53,16 @@ void ThreadPool::shutdownnow() {
             worker.join();
     }
     workers.clear();
+}
+
+void ThreadPool::bindToCPU(int cpu_id) {
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(cpu_id, &cpuset);
+
+    pthread_t tid = pthread_self();
+    int ret = pthread_setaffinity_np(tid, sizeof(cpu_set_t), &cpuset);
+    if (ret != 0) {
+        throw std::runtime_error("Set affinity failed");
+    }
 }

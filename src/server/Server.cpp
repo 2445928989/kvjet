@@ -4,7 +4,7 @@
 #include <climits>
 #include <iostream>
 #include <sys/fcntl.h>
-Server::Server(uint16_t port) : server_sock(), threadPool(16) {
+Server::Server(uint16_t port) : server_sock(), threadPool(2), kvstore(), aof("data/aof.dat") {
     memset(events, 0, sizeof(events));
     server_sock.bind("0.0.0.0", port);
     server_sock.listen();
@@ -25,6 +25,7 @@ Server::Server(uint16_t port) : server_sock(), threadPool(16) {
     if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server_sock.fd(), &event) == -1) {
         throw std::runtime_error("Epoll add error: " + std::string(strerror(errno)));
     }
+    aof.recover(&kvstore);
     std::cout << "Server Started" << std::endl;
 }
 Server::~Server() {
@@ -59,7 +60,7 @@ ssize_t Server::send(const std::string &str, const Socket &sock) {
 }
 
 std::string Server::recv(const Socket &sock) {
-    char buf[1024];
+    char buf[65536];
     std::string ret;
     ssize_t n;
     while (true) {
@@ -85,7 +86,7 @@ std::string Server::recv(const Socket &sock) {
     }
 }
 void Server::handleCommand(int sock, resp::RespValue value) {
-    std::string message = Handler::handle(std::move(value), kvstore);
+    std::string message = Handler::handle(std::move(value), kvstore, aof);
     std::unique_lock<std::mutex> lock(queueMutex);
     message_queue.emplace(std::move(message), sock);
 }
@@ -112,7 +113,7 @@ bool Server::accept() {
     return true;
 }
 void Server::epoll_step() {
-    int event_num = epoll_wait(epoll_fd, events, MAX_EVENTS, 100);
+    int event_num = epoll_wait(epoll_fd, events, MAX_EVENTS, 0);
     if (event_num == -1) {
         throw std::runtime_error("Epoll wait error");
     }
@@ -123,7 +124,6 @@ void Server::epoll_step() {
         } else {
             int client_fd = events[i].data.fd;
             std::string str = recv(connections[client_fd]);
-            std::cout << "Recieved: " << str << std::endl;
             if (str.empty()) {
                 continue;
             }

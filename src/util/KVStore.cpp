@@ -1,8 +1,9 @@
 #include "KVStore.h"
-
+#include "../resp/RespValue.h"
+#include "HashTable.h"
 template <typename T>
 KVStore<T>::KVStore(size_t shardCount) : shardCount(shardCount) {
-    for (size_t i = 0; i < shardCount; i++) {
+    for (int i = 0; i < shardCount; i++) {
         shards.emplace_back(std::make_unique<Shard>());
     }
 }
@@ -13,19 +14,19 @@ typename KVStore<T>::Shard &KVStore<T>::getShard(std::string_view key) {
     return *shards[idx];
 }
 template <typename T>
-void KVStore<T>::set(std::string key, T value) {
+std::optional<std::string> KVStore<T>::set(std::string key, T value) {
     Shard &shard = getShard(key);
     std::unique_lock lock(shard.lock);
     shard.data.set(key, std::move(value));
-    shard.lru.set(key);
+    return std::move(shard.lru.set(std::move(key)));
 }
 
 template <typename T>
-std::optional<T> KVStore<T>::get(std::string_view key) {
+T* KVStore<T>::get(std::string_view key) {
     Shard &shard = getShard(key);
     std::unique_lock lock(shard.lock);
     auto result = shard.data.get(key);
-    if (result != std::nullopt) {
+    if (result != nullptr) {
         shard.lru.access(key);
     }
     return result;

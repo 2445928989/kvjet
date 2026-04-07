@@ -3,7 +3,10 @@
 #include <functional>
 #include <future>
 #include <mutex>
+#include <pthread.h>
 #include <queue>
+#include <sched.h>
+#include <stdexcept>
 #include <thread>
 #include <type_traits>
 #include <vector>
@@ -33,6 +36,8 @@ public:
     // 析构函数
     ~ThreadPool();
     ThreadPool(int threadCount);
+    // 将线程绑定到一个核心
+    void bindToCPU(int cpu_id);
 
 private:
     std::vector<std::thread> workers;

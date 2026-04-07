@@ -1,26 +1,38 @@
 // RespEncoder.cpp
 #include "RespEncoder.h"
 namespace resp {
-    void encodeSimpleString(const SimpleString& msg, std::string &str) {
+    void encodeSimpleString(const SimpleString &msg, std::string &str) {
+        if (str.capacity() < str.size() + msg.value.size() + 3) {
+            str.reserve(str.capacity() << 1);
+        }
         str += "+";
         str += msg.value;
         str += "\r\n";
     }
-    void encodeError(const Error& msg, std::string &str) {
+    void encodeError(const Error &msg, std::string &str) {
+        if (str.capacity() < str.size() + msg.value.size() + 3) {
+            str.reserve(str.capacity() << 1);
+        }
         str += "-";
         str += msg.value;
         str += "\r\n";
     }
     void encodeInteger(int64_t num, std::string &str) {
+        if (str.capacity() < str.size() + 18 + 3) {
+            str.reserve(str.capacity() << 1);
+        }
         str += ":";
         str += std::to_string(num);
         str += "\r\n";
     }
-    void encodeBulkString(const BulkString& data, std::string &str) {
+    void encodeBulkString(const BulkString &data, std::string &str) {
         str += "$";
         if (!data.value.has_value()) {
             str += "-1\r\n";
         } else {
+            if (str.capacity() < str.size() + data.value->size() + 10 + 2) {
+                str.reserve(str.capacity() << 1);
+            }
             str += std::to_string(data.value->size());
             str += "\r\n";
             str += *(data.value);
@@ -28,6 +40,9 @@ namespace resp {
         }
     }
     void encodeArray(const Array &elements, std::string &str) {
+        if (str.capacity() < str.size() + 5) {
+            str.reserve(str.capacity() << 1);
+        }
         if (!elements.value.has_value()) {
             str += "*-1\r\n";
         } else {
@@ -52,6 +67,7 @@ namespace resp {
 
     std::string encode(const RespValue &val) {
         std::string ret;
+        ret.reserve(32);
         if (auto it = std::get_if<SimpleString>(&val.get())) {
             encodeSimpleString(*it, ret);
         } else if (auto it = std::get_if<Error>(&val.get())) {

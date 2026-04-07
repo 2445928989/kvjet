@@ -1,17 +1,17 @@
 cmake_minimum_required(VERSION 3.10)
 project(kvjet)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # 编译优化和警告
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -pedantic")
 set(CMAKE_CXX_FLAGS_DEBUG "-g -O0")
-set(CMAKE_CXX_FLAGS_RELEASE "-O2")
+set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 
-# 如果没有指定构建类型，默认为Debug
+# 如果没有指定构建类型，默认为Release
 if(NOT CMAKE_BUILD_TYPE)
-    set(CMAKE_BUILD_TYPE Debug)
+    set(CMAKE_BUILD_TYPE Release)
 endif()
 
 # 头文件包含路径
@@ -56,6 +56,13 @@ set(SERVER_SOURCES
 
 find_package(Threads REQUIRED)
 
+# 查找 jemalloc
+find_package(jemalloc CONFIG QUIET)
+if(NOT JEMALLOC_FOUND)
+    # 如果没有cmake config，尝试直接找库
+    set(JEMALLOC_LIBRARIES jemalloc)
+endif()
+
 # 编译标志统一应用
 if(MSVC)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /W4")
@@ -68,15 +75,16 @@ add_executable(kvserver
     src/server_main.cpp
     ${SERVER_SOURCES}
 )
-target_link_libraries(kvserver PRIVATE Threads::Threads)
+target_link_libraries(kvserver PRIVATE Threads::Threads ${JEMALLOC_LIBRARIES})
 target_include_directories(kvserver PRIVATE ${PROJECT_SOURCE_DIR}/src)
 
 # Client 二进制文件
 add_executable(kvclient
     src/client_main.cpp
     ${CLIENT_SOURCES}
+    ${HANDLER_SOURCES}
 )
-target_link_libraries(kvclient PRIVATE Threads::Threads)
+target_link_libraries(kvclient PRIVATE Threads::Threads ${JEMALLOC_LIBRARIES})
 target_include_directories(kvclient PRIVATE ${PROJECT_SOURCE_DIR}/src)
 
 
