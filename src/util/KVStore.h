@@ -20,12 +20,11 @@ public:
     void readfromfile(std::string dir) requires (std::same_as<T,resp::RespValue>);
 private:
     size_t shardCount;
-    const int lrusz;
     struct Shard {
         HashTable<T> data;
         std::shared_mutex lock;
         LRU lru;
-        Shard() : lru(lrusz) {};
+        Shard() : lru(1000) {};
     };
     std::vector<std::unique_ptr<Shard>> shards;
     Shard &getShard(std::string_view key);

@@ -2,7 +2,7 @@
 #include "../resp/RespValue.h"
 #include "HashTable.h"
 template <typename T>
-KVStore<T>::KVStore(size_t shardCount) : lrusz(1000),shardCount(shardCount) {
+KVStore<T>::KVStore(size_t shardCount) : shardCount(shardCount) {
     for (int i = 0; i < shardCount; i++) {
         shards.emplace_back(std::make_unique<Shard>());
     }
@@ -70,7 +70,7 @@ void KVStore<T>::readfromfile(std::string dir) requires (std::same_as<T,resp::Re
         if(!std::filesystem::exists(path)) continue;
         std::unique_lock lock(shards[i]->lock);
         shards[i]->data.readfromfile(path.string());
-        shards[i]->lru=LRU(lrusz);
+        shards[i]->lru=LRU(1000);
     }
 }
 
