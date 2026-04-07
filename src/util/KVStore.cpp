@@ -70,7 +70,7 @@ void KVStore<T>::readfromfile(std::string dir) requires (std::same_as<T,resp::Re
         if(!std::filesystem::exists(path)) continue;
         std::unique_lock lock(shards[i]->lock);
         shards[i]->data.readfromfile(path.string());
-        shards[i]->lru=LRU(1000);
+        shards[i]->lru.clear();
     }
 }
 

@@ -12,6 +12,8 @@ public:
     //删除x这个元素
     void del(std::string_view x);
     LRU(int maxsz);
+    //清空
+    void clear();
 private:
     const int maxsz;
     std::list<std::string> lst;

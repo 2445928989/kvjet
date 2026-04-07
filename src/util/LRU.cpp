@@ -40,3 +40,8 @@ void LRU::del(std::string_view x){
     lst.erase(*it);
     hash.erase(x);
 }
+
+void LRU::clear(){
+    lst.clear();
+    hash=HashTable<std::list<std::string>::iterator>();
+}
