@@ -14,7 +14,7 @@ namespace resp {
 
     RespValue::RespValue(Array &&v) : value(std::move(v)) {}
 
-    RespValue::RespValue() : value(Array{std::nullopt}) {}
+    RespValue::RespValue() : value(Array{}) {}
 
     const Value &RespValue::get() const {
         return value;
