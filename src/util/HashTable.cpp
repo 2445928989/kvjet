@@ -40,12 +40,12 @@ typename HashTable<T>::Node *HashTable<T>::find(std::string_view key) {
 }
 
 template <typename T>
-std::optional<T> HashTable<T>::get(std::string_view key) {
+T* HashTable<T>::get(std::string_view key) {
     Node *p = find(key);
     if (p->status == OCCUPIED)
-        return std::optional<T>(std::move(p->value));
+        return &p->value;
     else
-        return std::nullopt;
+        return nullptr;
 }
 
 template <typename T>

@@ -100,8 +100,8 @@ std::string Handler::GET(resp::RespValue request, KVStore<resp::RespValue> &kvst
     auto key = std::move(it->value.value()[1]);
     if (auto key_ = std::get_if<resp::SimpleString>(key->getPtr())) {
         auto result = kvstore.get(std::move(key_->value));
-        if (result.has_value()) {
-            return resp::encode(result.value());
+        if (result != nullptr) {
+            return resp::encode(*result);
         } else {
             resp::RespValue ret(resp::BulkString(std::nullopt));
             return resp::encode(ret);
@@ -137,7 +137,7 @@ std::string Handler::EXISTS(resp::RespValue request, KVStore<resp::RespValue> &k
     for (size_t i = 1; i < sz; i++) {
         auto key = std::move(it->value.value()[i]);
         if (auto key_ = std::get_if<resp::SimpleString>(key->getPtr())) {
-            ret += kvstore.get(std::move(key_->value)).has_value();
+            ret += kvstore.get(std::move(key_->value)) != nullptr;
         } else {
             throw std::runtime_error("EXISTS: Key is not a SimpleString");
         }
@@ -147,7 +147,7 @@ std::string Handler::EXISTS(resp::RespValue request, KVStore<resp::RespValue> &k
 std::string Handler::MGET(resp::RespValue request, KVStore<resp::RespValue> &kvstore) {
     auto it = std::get_if<resp::Array>(request.getPtr());
     size_t sz = it->value->size();
-    resp::Array ret;
+    std::string ret = "*" + std::to_string(sz - 1) + "\r\n";
     if (sz == 1) {
         throw std::runtime_error("MGET: At least one key");
     }
@@ -155,14 +155,14 @@ std::string Handler::MGET(resp::RespValue request, KVStore<resp::RespValue> &kvs
         auto key = std::move(it->value.value()[i]);
         if (auto key_ = std::get_if<resp::SimpleString>(key->getPtr())) {
             auto result = kvstore.get(std::move(key_->value));
-            if (result.has_value()) {
-                ret.value->push_back(std::make_unique<resp::RespValue>(std::move(result.value())));
+            if (result != nullptr) {
+                ret += resp::encode(*result);
             } else {
-                ret.value->push_back(std::make_unique<resp::RespValue>(resp::BulkString(nullptr)));
+                ret += "$-1\r\n";
             }
         } else {
             throw std::runtime_error("MGET: Key is not a SimpleString");
         }
     }
-    return resp::encode(resp::RespValue(std::move(ret)));
+    return ret;
 }

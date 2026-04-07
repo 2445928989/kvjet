@@ -22,11 +22,11 @@ std::optional<std::string> KVStore<T>::set(std::string key, T value) {
 }
 
 template <typename T>
-std::optional<T> KVStore<T>::get(std::string_view key) {
+T* KVStore<T>::get(std::string_view key) {
     Shard &shard = getShard(key);
     std::unique_lock lock(shard.lock);
     auto result = shard.data.get(key);
-    if (result != std::nullopt) {
+    if (result != nullptr) {
         shard.lru.access(key);
     }
     return result;

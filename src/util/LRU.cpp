@@ -4,22 +4,20 @@ LRU::LRU(int maxsz):maxsz(maxsz){}
 
 void LRU::access(std::string_view x){
     auto it=hash.get(x);
-    if(it==std::nullopt){
+    if(it==nullptr){
         return;
     }else{
-        auto st=*it.value();
-        lst.erase(it.value());
-        lst.push_back(st);
+        lst.erase(*it);
+        lst.push_back(std::string(x));
         hash.set(std::string(x),prev(lst.end()));
     }
 }
 
 std::optional<std::string> LRU::set(std::string x){
     auto it=hash.get(x);
-    if(it!=std::nullopt){
-        auto st=*it.value();
-        lst.erase(it.value());
-        lst.push_back(st);
+    if(it!=nullptr){
+        lst.erase(*it);
+        lst.push_back(x);
         hash.set(x,prev(lst.end()));
         return std::nullopt;
     }else{
@@ -38,7 +36,7 @@ std::optional<std::string> LRU::set(std::string x){
 
 void LRU::del(std::string_view x){
     auto it=hash.get(x);
-    if(it==std::nullopt) return;
-    lst.erase(it.value());
+    if(it==nullptr) return;
+    lst.erase(*it);
     hash.erase(x);
 }

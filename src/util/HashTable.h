@@ -8,8 +8,8 @@ template <typename T>
 class HashTable {
 public:
     HashTable();
-    // 获取对应的value,找不到返回std::nullopt
-    std::optional<T> get(std::string_view key);
+    // 获取对应的value,找不到返回std::nullptr
+    T* get(std::string_view key);
     // 设置key和value
     void set(std::string key, T value);
     bool erase(std::string_view key);
