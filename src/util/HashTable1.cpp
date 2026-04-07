@@ -57,7 +57,7 @@ void HashTable1<T>::set(std::string key,T value) {
         p->value = std::move(value);
     } else {
         size_t idx = findnextfree(key);
-        buckets[idx]={std::move(key), std::move(value)};
+        buckets[idx]=Node(std::move(key), std::move(value));
         sz++;
         double nowloadfactor = 1.0 * sz / bucketsz;
         if (nowloadfactor > loadfactor)
@@ -75,7 +75,7 @@ void HashTable1<T>::rehash() {
         auto &node=oldbuckets[i];
         if(node.key=="") continue;
         size_t idx = findnextfree(node.key);
-        buckets[idx]={std::move(node.key), std::move(node.value)};
+        buckets[idx]=Node(std::move(node.key), std::move(node.value));
     }
 }
 

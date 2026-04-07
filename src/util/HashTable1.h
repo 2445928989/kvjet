@@ -20,6 +20,7 @@ private:
         std::string key;
         T value;
         Node():key(""){};
+        Node(std::string key,T value):key(key),value(value){};
     };
 
     std::vector<Node> buckets;
