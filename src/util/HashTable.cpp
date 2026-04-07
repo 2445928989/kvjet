@@ -144,7 +144,7 @@ void HashTable<T>::readfromfile(std::string filename) requires std::same_as<T, r
     uint32_t readbucketsz;
     file.read(reinterpret_cast<char*>(&readbucketsz),sizeof(readbucketsz));
     bucketsz=readbucketsz;
-    buckets.assign(bucketsz,Node());
+    buckets = std::vector<Node>(bucketsz);
     //buckets有效元素大小
     uint32_t validsz;
     file.read(reinterpret_cast<char*>(&validsz),sizeof(validsz));
