@@ -1,8 +1,9 @@
 // Server.h
 #pragma once
+#include "../config/Config.h"
+#include "../kvstore/AOF.h"
+#include "../kvstore/KVStore.h"
 #include "../resp/RespValue.h"
-#include "../util/AOF.h"
-#include "../util/KVStore.h"
 #include "../util/Socket.h"
 #include "../util/ThreadPool.h"
 #include <cerrno>
@@ -13,10 +14,6 @@
 #include <sys/epoll.h>
 // 服务端类
 class Server {
-// epoll 单轮事件数
-#define MAX_EVENTS 1024
-// recv() 最长字符串长度
-#define MAX_RECV_SIZE 1024 * 1024
 public:
     // 构造函数，传入一个端口
     Server(uint16_t port);
@@ -45,13 +42,17 @@ public:
     // 运行循环
     void run();
 
+    void snapshotLoop();
+
 private:
+    volatile bool running = false;
+    std::thread snapshot_thread;
     std::mutex queueMutex;
     std::queue<std::pair<std::string, int>> message_queue;
     std::map<int, Socket> connections;
     Socket server_sock;
     int epoll_fd;
-    epoll_event events[MAX_EVENTS];
+    epoll_event events[Config::MAX_EVENTS];
     KVStore<resp::RespValue> kvstore;
     ThreadPool threadPool;
     AOF aof;

@@ -4,7 +4,7 @@
 #include <climits>
 #include <iostream>
 #include <sys/fcntl.h>
-Server::Server(uint16_t port) : server_sock(), threadPool(2), kvstore(), aof("data/aof.dat") {
+Server::Server(uint16_t port) : server_sock(), threadPool(Config::THREAD_COUNT), kvstore(), aof(Config::AOF_DIR) {
     memset(events, 0, sizeof(events));
     server_sock.bind("0.0.0.0", port);
     server_sock.listen();
@@ -25,12 +25,17 @@ Server::Server(uint16_t port) : server_sock(), threadPool(2), kvstore(), aof("da
     if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server_sock.fd(), &event) == -1) {
         throw std::runtime_error("Epoll add error: " + std::string(strerror(errno)));
     }
+    kvstore.readfromfile(Config::SNAPSHOT_DIR);
     aof.recover(&kvstore);
     std::cout << "Server Started" << std::endl;
 }
 Server::~Server() {
     if (epoll_fd != -1) {
         ::close(epoll_fd);
+    }
+    running = false;
+    if (snapshot_thread.joinable()) {
+        snapshot_thread.join();
     }
 }
 
@@ -60,14 +65,14 @@ ssize_t Server::send(const std::string &str, const Socket &sock) {
 }
 
 std::string Server::recv(const Socket &sock) {
-    char buf[65536];
+    char buf[Config::MAX_RECV_SIZE];
     std::string ret;
     ssize_t n;
     while (true) {
         n = ::recv(sock.fd(), buf, sizeof(buf), 0);
         if (n > 0) {
             ret += std::string(buf, n);
-            if (ret.size() > MAX_RECV_SIZE) {
+            if (ret.size() > Config::MAX_RECV_SIZE) {
                 throw std::runtime_error("Command too large");
             }
         } else if (n == 0) {
@@ -109,11 +114,10 @@ bool Server::accept() {
         throw std::runtime_error("Epoll add error: " + std::string(strerror(errno)));
     }
     connections[fd] = std::move(sock);
-    std::cout << "Connected to: " << fd << std::endl;
     return true;
 }
 void Server::epoll_step() {
-    int event_num = epoll_wait(epoll_fd, events, MAX_EVENTS, 0);
+    int event_num = epoll_wait(epoll_fd, events, Config::MAX_EVENTS, 0);
     if (event_num == -1) {
         throw std::runtime_error("Epoll wait error");
     }
@@ -159,7 +163,17 @@ void Server::epoll_step() {
     }
 }
 void Server::run() {
-    while (true) {
+    running = true;
+    snapshot_thread = std::thread([this] { snapshotLoop(); });
+    while (running) {
         epoll_step();
+    }
+}
+
+void Server::snapshotLoop() {
+    while (running) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(Config::SNAPSHOT_INTERVAL_MS));
+        std::filesystem::resize_file(Config::AOF_DIR, 0);
+        kvstore.writetofile(Config::SNAPSHOT_DIR);
     }
 }

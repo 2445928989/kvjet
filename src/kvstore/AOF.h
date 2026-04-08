@@ -1,4 +1,5 @@
 #pragma once
+#include "../config/Config.h"
 #include "../resp/RespValue.h"
 #include "KVStore.h"
 #include <filesystem>
@@ -8,10 +9,6 @@
 #include <string>
 class AOF {
 public:
-    // 距离上次同步时间超过FSYNC_TIME或缓冲大于BUFFER_SIZE时flush
-    static constexpr size_t BUFFER_SIZE = 1024 * 1024;
-    static constexpr int FSYNC_TIME = 1000;
-
     // 加入text到日志中
     void append(std::string_view text);
 

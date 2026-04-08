@@ -1,6 +1,6 @@
 #include "LRU.h"
 
-LRU::LRU(int maxsz):maxsz(maxsz){}
+LRU::LRU(size_t maxsz):maxsz(maxsz){}
 
 void LRU::access(std::string_view x){
     auto it=hash.get(x);
@@ -27,7 +27,7 @@ std::optional<std::string> LRU::set(std::string x){
             auto erasestr=std::move(*lst.begin());
             lst.erase(lst.begin());
             hash.erase(erasestr);
-            return std::move(erasestr);
+            return erasestr;
         }else{
             return std::nullopt;
         }

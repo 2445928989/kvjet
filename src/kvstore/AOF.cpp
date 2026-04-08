@@ -20,8 +20,8 @@ void AOF::append(std::string_view text) {
     std::lock_guard lock(mut);
     auto now = std::chrono::steady_clock::now();
     buffer += text;
-    if (buffer.size() > BUFFER_SIZE ||
-        std::chrono::duration_cast<std::chrono::milliseconds>(now - last_fsync).count() > FSYNC_TIME) {
+    if (buffer.size() > Config::AOF_BUFFER_SIZE ||
+        std::chrono::duration_cast<std::chrono::milliseconds>(now - last_fsync).count() > Config::AOF_FSYNC_TIME_MS) {
         flush();
     }
 }
@@ -29,8 +29,8 @@ void AOF::append(resp::RespValue &value) {
     std::lock_guard lock(mut);
     auto now = std::chrono::steady_clock::now();
     buffer += std::move(resp::encode(value));
-    if (buffer.size() > BUFFER_SIZE ||
-        std::chrono::duration_cast<std::chrono::milliseconds>(now - last_fsync).count() > FSYNC_TIME) {
+    if (buffer.size() > Config::AOF_BUFFER_SIZE ||
+        std::chrono::duration_cast<std::chrono::milliseconds>(now - last_fsync).count() > Config::AOF_FSYNC_TIME_MS) {
         flush();
     }
 }
@@ -41,7 +41,7 @@ void AOF::recover(KVStore<resp::RespValue> *kv) {
     if (!in.is_open())
         return;
     int count = 0;
-    char buf[BUFFER_SIZE];
+    char buf[Config::AOF_BUFFER_SIZE];
     resp::RespParser parser;
     while (in.read(buf, sizeof(buf)) || in.gcount() > 0) {
         size_t sz = in.gcount();

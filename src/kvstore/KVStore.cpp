@@ -3,7 +3,7 @@
 #include "HashTable.h"
 template <typename T>
 KVStore<T>::KVStore(size_t shardCount) : shardCount(shardCount) {
-    for (int i = 0; i < shardCount; i++) {
+    for (size_t i = 0; i < shardCount; i++) {
         shards.emplace_back(std::make_unique<Shard>());
     }
 }
@@ -18,7 +18,7 @@ std::optional<std::string> KVStore<T>::set(std::string key, T value) {
     Shard &shard = getShard(key);
     std::unique_lock lock(shard.lock);
     shard.data.set(key, std::move(value));
-    return std::move(shard.lru.set(std::move(key)));
+    return shard.lru.set(std::move(key));
 }
 
 template <typename T>
@@ -56,7 +56,7 @@ void KVStore<T>::writetofile(std::string dir) requires (std::same_as<T,resp::Res
         std::filesystem::remove_all(dir);
     }
     std::filesystem::create_directories(dir);
-    for(int i=0;i<shardCount;i++){
+    for(size_t i=0;i<shardCount;i++){
         std::unique_lock lock(shards[i]->lock);
         std::filesystem::path path=std::filesystem::path(dir)/("shard_"+std::to_string(i)+".snap");
         shards[i]->data.writetofile(path.string());
@@ -65,7 +65,7 @@ void KVStore<T>::writetofile(std::string dir) requires (std::same_as<T,resp::Res
 
 template <typename T>
 void KVStore<T>::readfromfile(std::string dir) requires (std::same_as<T,resp::RespValue>){
-    for(int i=0;i<shardCount;i++){
+    for(size_t i=0;i<shardCount;i++){
         std::filesystem::path path=std::filesystem::path(dir)/("shard_"+std::to_string(i)+".snap");
         if(!std::filesystem::exists(path)) continue;
         std::unique_lock lock(shards[i]->lock);

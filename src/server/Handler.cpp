@@ -1,7 +1,7 @@
 // Handler.cpp
 #include "Handler.h"
 #include "../resp/RespEncoder.h"
-#include "../util/AOF.h"
+#include "../kvstore/AOF.h"
 #include <stdexcept>
 std::string Handler::handle(resp::RespValue request, KVStore<resp::RespValue> &kvstore, AOF &aof) {
     if (auto it = std::get_if<resp::Array>(request.getPtr())) {
@@ -65,7 +65,7 @@ std::string Handler::SET(resp::RespValue request, KVStore<resp::RespValue> &kvst
     auto key = std::move(it->value.value()[1]);
     auto value = std::move(it->value.value()[2]);
     if (auto key_ = std::get_if<resp::SimpleString>(key->getPtr())) {
-        auto deleted_key = std::move(kvstore.set(std::move(key_->value), std::move(*value)));
+        auto deleted_key = kvstore.set(std::move(key_->value), std::move(*value));
         if (deleted_key.has_value()) {
         }
         resp::RespValue ret(resp::SimpleString("OK"));
@@ -82,7 +82,7 @@ std::string Handler::SET(resp::RespValue request, KVStore<resp::RespValue> &kvst
     auto key = std::move(it->value.value()[1]);
     auto value = std::move(it->value.value()[2]);
     if (auto key_ = std::get_if<resp::SimpleString>(key->getPtr())) {
-        auto deleted_key = std::move(kvstore.set(std::move(key_->value), std::move(*value)));
+        auto deleted_key = kvstore.set(std::move(key_->value), std::move(*value));
         if (deleted_key.has_value()) {
             aof.append(std::string("*2\r\n+DEL\r\n+" + deleted_key.value() + "\r\n"));
         }

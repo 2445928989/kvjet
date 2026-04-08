@@ -11,11 +11,11 @@ public:
     std::optional<std::string> set(std::string x);
     //删除x这个元素
     void del(std::string_view x);
-    LRU(int maxsz);
+    LRU(size_t maxsz);
     //清空
     void clear();
 private:
-    const int maxsz;
+    const size_t maxsz;
     std::list<std::string> lst;
     HashTable<std::list<std::string>::iterator> hash;
 };

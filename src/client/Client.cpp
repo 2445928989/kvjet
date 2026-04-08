@@ -6,6 +6,8 @@
 #include <iostream>
 #include <random>
 #include <sstream>
+#include <algorithm>
+#include <iomanip>
 
 Client::Client(const std::string &ip, uint16_t port) : sock() {
     sock.connect(ip, port);
@@ -94,9 +96,25 @@ resp::RespValue Client::handle(std::string req) {
         ret.value.value().push_back(std::make_unique<resp::RespValue>(resp::BulkString(std::move(reqv[2]))));
         return ret;
     } else if (reqv[0] == "MGET") {
-
+        if (reqv.size() < 2) {
+            return resp::RespValue(resp::Error("Usage: MGET key1 key2..."));
+        }
+        resp::Array ret;
+        ret.value = std::vector<std::unique_ptr<resp::RespValue>>();
+        for (auto &str : reqv) {
+            ret.value.value().push_back(std::make_unique<resp::RespValue>(resp::SimpleString(std::move(str))));
+        }
+        return ret;
     } else if (reqv[0] == "EXSITS") {
-
+        if (reqv.size() < 2) {
+            return resp::RespValue(resp::Error("Usage: EXISTS key1 key2..."));
+        }
+        resp::Array ret;
+        ret.value = std::vector<std::unique_ptr<resp::RespValue>>();
+        for (auto &str : reqv) {
+            ret.value.value().push_back(std::make_unique<resp::RespValue>(resp::SimpleString(std::move(str))));
+        }
+        return ret;
     } else if (reqv[0] == "HELP") {
         std::string help = "Commands:\n"
                            "    SET key value        Set a key-value pair\n"
@@ -169,4 +187,81 @@ void Client::benchmark(int ops, const std::string &op_type) {
     double qps = (ops * 1000.0) / elapsed;
 
     std::cout << "QPS: " << qps << std::endl;
+}
+
+void Client::latencyBenchmark(int ops, const std::string &op_type) {
+    std::cout << "Starting latency benchmark (" << ops << " operations)..." << std::endl;
+    
+    std::vector<double> latencies;
+    latencies.reserve(ops);
+    
+    for (int i = 0; i < ops; i++) {
+        std::string req;
+        if (op_type == "set") {
+            req = "SET key" + std::to_string(rnd() % 100000) + " value" + std::to_string(rnd() % 100000);
+        } else if (op_type == "get") {
+            req = "GET key" + std::to_string(rnd() % 100000);
+        } else if (op_type == "mixed") {
+            if (i % 2) {
+                req = "SET key" + std::to_string(rnd() % 100000) + " value" + std::to_string(rnd() % 100000);
+            } else {
+                req = "GET key" + std::to_string(rnd() % 100000);
+            }
+        }
+        
+        resp::RespValue request = handle(std::move(req));
+        std::string encoded = resp::encode(request);
+        
+        // 记录发送时间
+        auto send_time = std::chrono::high_resolution_clock::now();
+        send(encoded);
+        
+        // 等待响应
+        sock.parser().reset();
+        while (!sock.parser().hasResult()) {
+            char buf[4096];
+            ssize_t n = ::recv(sock.fd(), buf, sizeof(buf), 0);
+            if (n > 0) {
+                sock.parser().append(std::string(buf, n));
+            }
+        }
+        
+        auto recv_time = std::chrono::high_resolution_clock::now();
+        sock.parser().pop();  // 移除已处理的结果
+        
+        // 计算延迟（微秒）
+        auto latency_us = std::chrono::duration_cast<std::chrono::microseconds>(recv_time - send_time).count();
+        latencies.push_back(latency_us / 1000.0);  // 转换为毫秒
+        
+        if ((i + 1) % (ops / 10) == 0 || i == 0) {
+            std::cout << "Progress: " << (i + 1) << "/" << ops << std::endl;
+        }
+    }
+    
+    // 排序以计算百分位数
+    std::sort(latencies.begin(), latencies.end());
+    
+    // 计算百分位数
+    auto percentile = [&](double p) -> double {
+        int idx = (int)((p / 100.0) * latencies.size());
+        if (idx >= latencies.size()) idx = latencies.size() - 1;
+        return latencies[idx];
+    };
+    
+    double min_lat = latencies.front();
+    double max_lat = latencies.back();
+    double sum = 0;
+    for (double lat : latencies) sum += lat;
+    double avg_lat = sum / latencies.size();
+    
+    std::cout << "\n=== Latency Results ===" << std::endl;
+    std::cout << "Total requests: " << ops << std::endl;
+    std::cout << "Latency (ms):" << std::endl;
+    std::cout << "  Min:    " << std::fixed << std::setprecision(2) << min_lat << std::endl;
+    std::cout << "  P50:    " << std::fixed << std::setprecision(2) << percentile(50) << std::endl;
+    std::cout << "  P90:    " << std::fixed << std::setprecision(2) << percentile(90) << std::endl;
+    std::cout << "  P99:    " << std::fixed << std::setprecision(2) << percentile(99) << std::endl;
+    std::cout << "  P99.9:  " << std::fixed << std::setprecision(2) << percentile(99.9) << std::endl;
+    std::cout << "  Max:    " << std::fixed << std::setprecision(2) << max_lat << std::endl;
+    std::cout << "  Avg:    " << std::fixed << std::setprecision(2) << avg_lat << std::endl;
 }

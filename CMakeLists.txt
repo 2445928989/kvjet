@@ -21,10 +21,14 @@ include_directories(${PROJECT_SOURCE_DIR}/src)
 set(UTIL_SOURCES
     src/util/Socket.cpp
     src/util/ThreadPool.cpp
-    src/util/HashTable.cpp
-    src/util/KVStore.cpp
-    src/util/AOF.cpp
-    src/util/LRU.cpp
+)
+
+# KVStore源文件
+set(KVSTORE_SOURCES
+    src/kvstore/HashTable.cpp
+    src/kvstore/KVStore.cpp
+    src/kvstore/AOF.cpp
+    src/kvstore/LRU.cpp
 )
 
 # RESP协议源文件
@@ -37,6 +41,7 @@ set(RESP_SOURCES
 # 服务端处理源文件
 set(HANDLER_SOURCES
     src/server/Handler.cpp
+    ${KVSTORE_SOURCES}
 )
 
 # 客户端源文件
@@ -51,6 +56,7 @@ set(SERVER_SOURCES
     src/server/Server.cpp
     ${HANDLER_SOURCES}
     ${UTIL_SOURCES}
+    ${KVSTORE_SOURCES}
     ${RESP_SOURCES}
 )
 

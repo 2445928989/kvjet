@@ -22,6 +22,8 @@ public:
     void run();
     // 压测模式
     void benchmark(int ops, const std::string &op_type);
+    // 延迟测量模式
+    void latencyBenchmark(int ops, const std::string &op_type);
     // 处理指令
     // 指令错误时返回一个resp::Error
     resp::RespValue handle(std::string);

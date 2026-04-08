@@ -67,7 +67,7 @@ void HashTable<T>::rehash() {
     bucketsz <<= 1;
     decltype(buckets) oldbuckets(bucketsz);
     swap(oldbuckets, buckets);
-    for (int i = 0; i < oldbucketsz; i++) {
+    for (size_t i = 0; i < oldbucketsz; i++) {
         auto &node = oldbuckets[i];
         if (node.status != OCCUPIED)
             continue;
