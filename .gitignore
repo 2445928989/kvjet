@@ -23,6 +23,7 @@ out/
 *~
 *.user
 .DS_Store
+.VSCodeCounter/
 
 # CMake
 CMakeCache.txt

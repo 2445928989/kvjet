@@ -1,5 +1,6 @@
 // Config.h
 #pragma once
+#include <cstdint>
 #include <string>
 // 用于修改配置常量
 namespace Config {
@@ -37,14 +38,23 @@ namespace Config {
     // 快照保存目录
     constexpr std::string SNAPSHOT_DIR = "data/kvstore/";
 
-    // ========== 心跳配置 ==========
+    // ========== 集群配置 ==========
+    // 一致性哈希中每个物理节点的虚拟节点数
+    constexpr size_t VIRTUAL_REPLICAS = 160;
+
+    // ========== 网络配置 ==========
+    // 服务器监听端口
+    constexpr uint16_t SERVER_PORT = 7800;
+
+    // 心跳线程监听端口
+    constexpr uint16_t HEARTBEAT_PORT = 7801;
+
+    // gossip缓存最大容量
+    constexpr size_t MSG_CACHE_SIZE = 1000;
+
     // 心跳发送间隔（毫秒）
     constexpr int HEARTBEAT_INTERVAL_MS = 1000; // 1秒
 
     // 心跳超时判定（毫秒）
     constexpr int HEARTBEAT_TIMEOUT_MS = 3000; // 3秒
-
-    // ========== 集群配置 ==========
-    // 一致性哈希中每个物理节点的虚拟节点数
-    constexpr int VIRTUAL_REPLICAS = 160;
 }
