@@ -65,7 +65,7 @@ void Socket::connect(const std::string &ip, uint16_t port) {
     if (::connect(fd_, result->ai_addr, result->ai_addrlen) == -1) {
         const int connect_errno = errno;
         ::freeaddrinfo(result);
-        throw std::runtime_error("Connect error: " + std::string(strerror(connect_errno)));
+        throw std::runtime_error("Connect error!!!: " + std::string(strerror(connect_errno)));
     }
 
     ::freeaddrinfo(result);

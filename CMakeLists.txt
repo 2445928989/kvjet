@@ -21,6 +21,8 @@ include_directories(${PROJECT_SOURCE_DIR}/src)
 set(UTIL_SOURCES
     src/util/Socket.cpp
     src/util/ThreadPool.cpp
+    src/util/Cluster.cpp
+    src/util/Utils.cpp
 )
 
 # KVStore源文件
@@ -87,6 +89,7 @@ target_include_directories(kvserver PRIVATE ${PROJECT_SOURCE_DIR}/src)
 # Client 二进制文件
 add_executable(kvclient
     src/client_main.cpp
+    src/server/Server.cpp
     ${CLIENT_SOURCES}
     ${HANDLER_SOURCES}
 )

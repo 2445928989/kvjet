@@ -8,9 +8,8 @@
 #include <vector>
 
 int main(int argc, char *argv[]) {
-    if (argc < 2) {
-        std::cout << "KVJet Client v1.0\n\n";
-        std::cout << "Usage: " << argv[0] << " <ip> [COMMAND] [OPTIONS]\n\n";
+    if (argc < 3) {
+        std::cout << "Usage: " << argv[0] << " <ip> <port> [COMMAND] [OPTIONS]\n\n";
         std::cout << "Commands:\n";
         std::cout << "  (no command)                    Interactive mode\n";
         std::cout << "  --benchmark <ops> <type>       Throughput test (with pipelining)\n";
@@ -22,7 +21,7 @@ int main(int argc, char *argv[]) {
     }
 
     std::string ip = argv[1];
-    uint16_t port = Config::SERVER_PORT;
+    uint16_t port = std::atoi(argv[2]);
 
     bool enable_benchmark = false;
     bool enable_latency = false;
@@ -31,24 +30,24 @@ int main(int argc, char *argv[]) {
     int num_threads = 1;
 
     // 参数解析
-    if (argc >= 4) {
-        std::string cmd = argv[2];
+    if (argc >= 5) {
+        std::string cmd = argv[3];
         if (cmd == "--benchmark") {
             enable_benchmark = true;
-            benchmark_ops = atoi(argv[3]);
-            if (argc >= 5) {
-                benchmark_type = argv[4];
+            benchmark_ops = atoi(argv[4]);
+            if (argc >= 6) {
+                benchmark_type = argv[5];
             }
         } else if (cmd == "--latency") {
             enable_latency = true;
-            benchmark_ops = atoi(argv[3]);
-            if (argc >= 5) {
-                benchmark_type = argv[4];
+            benchmark_ops = atoi(argv[4]);
+            if (argc >= 6) {
+                benchmark_type = argv[5];
             }
         }
 
         // 查找 --threads 参数
-        for (int i = 2; i < argc - 1; i++) {
+        for (int i = 3; i < argc - 1; i++) {
             if (std::string(argv[i]) == "--threads") {
                 num_threads = atoi(argv[i + 1]);
                 break;

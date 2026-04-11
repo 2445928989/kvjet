@@ -7,6 +7,7 @@
 #include <mutex>
 #include <sstream>
 #include <string>
+class Server;
 class AOF {
 public:
     // 加入text到日志中
@@ -14,7 +15,7 @@ public:
 
     void append(resp::RespValue &value);
     // 从日志中恢复
-    void recover(KVStore<resp::RespValue> *kv);
+    void recover(Server &server);
 
     void flush();
     AOF(std::string filename);

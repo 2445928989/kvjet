@@ -50,7 +50,10 @@ namespace Config {
     constexpr uint16_t HEARTBEAT_PORT = 7801;
 
     // gossip缓存最大容量
-    constexpr size_t MSG_CACHE_SIZE = 1000;
+    constexpr size_t GOSSIP_CACHE_SIZE = 1000;
+
+    // gossip超时时间（毫秒）
+    constexpr int GOSSIP_TIMEOUT_MS = 60000; // 60秒
 
     // 心跳发送间隔（毫秒）
     constexpr int HEARTBEAT_INTERVAL_MS = 1000; // 1秒

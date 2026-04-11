@@ -1,8 +1,10 @@
 // Client.h
 #pragma once
+#include "../util/Cluster.h"
 #include "../util/Socket.h"
 #include <cerrno>
 #include <cstdint>
+#include <map>
 #include <string>
 // 客户端类
 class Client {
@@ -15,9 +17,11 @@ public:
     Client(const Client &) = delete;
     Client &operator=(const Client &) = delete;
     // 发送请求，返回长度，不成功时返回-1
-    ssize_t send(const std::string &request);
+    ssize_t send(const std::string &request, const std::string &key);
     // 接收消息
-    std::string recv();
+    std::string recv(const std::string &key);
+    // 辅助方法：获取Socket引用
+    Socket &getSocket(int fd);
     // 运行循环
     void run();
     // 压测模式
@@ -27,7 +31,10 @@ public:
     // 处理指令
     // 指令错误时返回一个resp::Error
     resp::RespValue handle(std::string);
+    // 从RespValue中提取key（用于路由）
+    std::string extractKeyFromRequest(const resp::RespValue &req);
 
 private:
-    Socket sock;
+    Cluster cluster;
+    std::map<int, Socket> connections;
 };

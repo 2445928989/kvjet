@@ -34,9 +34,7 @@ void AOF::append(resp::RespValue &value) {
         flush();
     }
 }
-void AOF::recover(KVStore<resp::RespValue> *kv) {
-    if (kv == nullptr)
-        return;
+void AOF::recover(Server &server) {
     std::ifstream in(filename, std::ios::binary);
     if (!in.is_open())
         return;
@@ -48,7 +46,7 @@ void AOF::recover(KVStore<resp::RespValue> *kv) {
         parser.append(std::string(buf, sz));
         while (parser.hasResult()) {
             auto cmd = parser.getResult().value();
-            Handler::handle(std::move(cmd), *kv);
+            Handler::handle_noAOF(std::move(cmd), server);
             count++;
         }
     }

@@ -81,4 +81,17 @@ namespace resp {
         }
         return ret;
     }
+
+    std::string encodeNode(const Cluster::Node &node) {
+        std::string ret = "*3\r\n+" + node.ip + "\r\n:" + std::to_string(node.port) + "\r\n+" + std::to_string(node.UUID) + "\r\n";
+        return ret;
+    }
+
+    std::string encodeTopo(const std::map<uint64_t, Cluster::Node> &topo) {
+        std::string ret = "*" + std::to_string(topo.size()) + "\r\n";
+        for (auto &[id, node] : topo) {
+            ret += encodeNode(node);
+        }
+        return ret;
+    }
 };

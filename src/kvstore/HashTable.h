@@ -1,28 +1,39 @@
 #pragma once
+#include "../resp/RespEncoder.h"
+#include "../resp/RespParser.h"
+#include "../resp/RespValue.h"
+#include <concepts>
+#include <filesystem>
+#include <fstream>
 #include <list>
 #include <optional>
 #include <shared_mutex>
 #include <string>
 #include <vector>
-#include "../resp/RespValue.h"
-#include "../resp/RespEncoder.h"
-#include "../resp/RespParser.h"
-#include <concepts>
-#include <fstream>
-#include <filesystem>
 template <typename T>
 class HashTable {
 public:
     HashTable();
     // 获取对应的value,找不到返回std::nullptr
-    T* get(std::string_view key);
+    T *get(std::string_view key);
     // 设置key和value
     void set(std::string key, T value);
     bool erase(std::string_view key);
     static uint32_t gethash(std::string_view key);
     bool checkexist(std::string_view key);
-    void writetofile(std::string filename) requires (std::same_as<T,resp::RespValue>);
-    void readfromfile(std::string filename) requires (std::same_as<T,resp::RespValue>);
+    void writetofile(std::string filename)
+        requires(std::same_as<T, resp::RespValue>);
+    void readfromfile(std::string filename)
+        requires(std::same_as<T, resp::RespValue>);
+    // 遍历所有key-value对，callable接收(const std::string&, T*)
+    template <typename Func>
+    void forEach(Func callback) {
+        for (const auto &node : buckets) {
+            if (node.status == OCCUPIED) {
+                callback(node.key, const_cast<T *>(&node.value));
+            }
+        }
+    }
     enum stat {
         DELETED,
         EMPTY,

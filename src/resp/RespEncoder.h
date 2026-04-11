@@ -1,5 +1,6 @@
 // RespEncoder.h
 #pragma once
+#include "../util/Cluster.h"
 #include "RespValue.h"
 #include <string>
 #include <vector>
@@ -13,4 +14,8 @@ namespace resp {
     void encodeInteger(int64_t num, std::string &str);
     // 编码RespValue对象
     std::string encode(const RespValue &val);
+    // 编码网络节点信息
+    std::string encodeNode(const Cluster::Node &node);
+    // 编码网络拓扑信息
+    std::string encodeTopo(const std::map<uint64_t, Cluster::Node> &topo);
 };

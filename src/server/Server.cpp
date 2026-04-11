@@ -1,10 +1,13 @@
 // Server.cpp
 #include "Server.h"
+#include "../util/Utils.h"
 #include "Handler.h"
 #include <climits>
+#include <csignal>
 #include <iostream>
 #include <sys/fcntl.h>
-Server::Server(uint16_t port) : server_sock(), threadPool(Config::THREAD_COUNT), kvstore(), aof(Config::AOF_DIR) {
+#include <sys/socket.h>
+Server::Server(const std::string &ip, uint16_t port) : server_sock(), threadPool(Config::THREAD_COUNT), kvstore(), aof(Config::AOF_DIR), cluster(port + 1, ip) {
     memset(events, 0, sizeof(events));
     server_sock.bind("0.0.0.0", port);
     server_sock.listen();
@@ -26,7 +29,7 @@ Server::Server(uint16_t port) : server_sock(), threadPool(Config::THREAD_COUNT),
         throw std::runtime_error("Epoll add error: " + std::string(strerror(errno)));
     }
     kvstore.readfromfile(Config::SNAPSHOT_DIR);
-    aof.recover(&kvstore);
+    aof.recover(*this);
     std::cout << "Server Started" << std::endl;
 }
 Server::~Server() {
@@ -56,6 +59,8 @@ ssize_t Server::send(const std::string &str, const Socket &sock) {
         } else if (n == -1) {
             if (errno == EINTR)
                 continue;
+            if (errno == EBADF)
+                break;
             throw std::runtime_error("Send error: " + std::string(strerror(errno)));
         }
         sent += static_cast<size_t>(n);
@@ -72,9 +77,6 @@ std::string Server::recv(const Socket &sock) {
         n = ::recv(sock.fd(), buf, sizeof(buf), 0);
         if (n > 0) {
             ret += std::string(buf, n);
-            if (ret.size() > Config::MAX_RECV_SIZE) {
-                throw std::runtime_error("Command too large");
-            }
         } else if (n == 0) {
             epoll_ctl(epoll_fd, EPOLL_CTL_DEL, sock.fd(), nullptr);
             connections.erase(sock.fd());
@@ -91,7 +93,9 @@ std::string Server::recv(const Socket &sock) {
     }
 }
 void Server::handleCommand(int sock, resp::RespValue value) {
-    std::string message = Handler::handle(std::move(value), kvstore, aof);
+    std::string message = Handler::handle(std::move(value), *this, sock);
+    if (message.empty())
+        return;
     std::unique_lock<std::mutex> lock(queueMutex);
     message_queue.emplace(std::move(message), sock);
 }
@@ -115,6 +119,51 @@ bool Server::accept() {
     }
     connections[fd] = std::move(sock);
     return true;
+}
+void Server::connect(const std::string &ip, uint16_t port, uint64_t uuid) {
+    Socket sock;
+    sock.connect(ip, port);
+    int fd = sock.fd();
+    int flags = fcntl(fd, F_SETFL, 0);
+    if (flags == -1) {
+        throw std::runtime_error("fcntl(F_GETFL) error: " + std::string(strerror(errno)));
+    }
+    if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) == -1) {
+        throw std::runtime_error("fcntl(F_SETFL) error: " + std::string(strerror(errno)));
+    }
+    epoll_event event{};
+    event.data.fd = fd;
+    event.events = EPOLLIN | EPOLLET;
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &event) == -1) {
+        throw std::runtime_error("Epoll add error: " + std::string(strerror(errno)));
+    }
+    send("*2\r\n+HELLO\r\n+" + std::to_string(cluster.getSelf().UUID) + "\r\n", sock);
+    while (!sock.parser().hasResult()) {
+        sock.parser().append(recv(sock));
+    }
+    // 里边是个+OK
+    sock.parser().getResult();
+    connections[fd] = std::move(sock);
+    cluster.addConnection(uuid, fd);
+    threadPool.enqueue([this, uuid]() {
+        sendDataToNode(uuid);
+    });
+}
+
+void Server::sendDataToNode(uint64_t target_uuid) {
+    int target_fd = cluster.getConnection(target_uuid);
+    if (target_fd == -1) {
+        std::cerr << "Failed to get fd for UUID: " << target_uuid << std::endl;
+        return;
+    }
+    kvstore.forEach([this, target_uuid, target_fd](const std::string &key, resp::RespValue *value) {
+        uint64_t owner_uuid = cluster.queryNode(key);
+        if (owner_uuid == target_uuid) {
+            std::string cmd = "*3\r\n+SET\r\n+" + key + "\r\n" + resp::encode(*value);
+            std::unique_lock<std::mutex> lock(queueMutex);
+            message_queue.emplace(std::move(cmd), target_fd);
+        }
+    });
 }
 void Server::epoll_step() {
     int event_num = epoll_wait(epoll_fd, events, Config::MAX_EVENTS, 0);
@@ -152,7 +201,17 @@ void Server::epoll_step() {
     while (!message_queue.empty()) {
         auto message = std::move(message_queue.front());
         message_queue.pop();
+        if (message.second == -1) {
+            std::istringstream iss(message.first);
+            std::string ip;
+            uint16_t port;
+            uint64_t uuid;
+            iss >> ip >> port >> uuid;
+            connect(ip, port, uuid);
+            continue;
+        }
         auto it = connections.find(message.second);
+
         if (it != connections.end())
             send(std::move(message.first), it->second);
         else {
@@ -165,9 +224,45 @@ void Server::epoll_step() {
 void Server::run() {
     running = true;
     snapshot_thread = std::thread([this] { snapshotLoop(); });
-    while (running) {
+    while (running && !shutdown_requested) {
         epoll_step();
     }
+    gracefulShutdown();
+}
+
+void Server::gracefulShutdown() {
+    std::cout << "\nStarting graceful shutdown..." << std::endl;
+
+    running = false; // 停止接收新请求
+
+    uint64_t gossip_uuid = cluster.generateUUID();
+    cluster.addGossip(gossip_uuid);
+
+    std::string nodeout_cmd = "*3\r\n+NODEOUT\r\n+" + std::to_string(gossip_uuid) +
+                              "\r\n+" + std::to_string(cluster.getSelf().UUID) + "\r\n";
+
+    auto connections = cluster.getConnections();
+    uint64_t self_uuid = cluster.getSelf().UUID;
+    for (auto &[uuid, fd] : connections) {
+        if (uuid != self_uuid) {
+            ::send(fd, nodeout_cmd.c_str(), nodeout_cmd.size(), MSG_NOSIGNAL);
+        }
+    }
+    cluster.delNodeToHash(cluster.getSelf().UUID);
+    cluster.delTopoNode(cluster.getSelf().UUID);
+    // 遍历kvstore，把所有数据转发给新owner
+    kvstore.forEach([this](const std::string &key, resp::RespValue *value) {
+        uint64_t owner_uuid = cluster.queryNode(key);
+        if (owner_uuid != cluster.getSelf().UUID) {
+            int target_fd = cluster.getConnection(owner_uuid);
+            if (target_fd != -1) {
+                std::string set_cmd = "*3\r\n+SET\r\n+" + key + "\r\n" + resp::encode(*value);
+                ::send(target_fd, set_cmd.c_str(), set_cmd.size(), MSG_NOSIGNAL);
+            }
+        }
+    });
+
+    std::cout << "Graceful shutdown complete." << std::endl;
 }
 
 void Server::snapshotLoop() {
@@ -176,4 +271,65 @@ void Server::snapshotLoop() {
         std::filesystem::resize_file(Config::AOF_DIR, 0);
         kvstore.writetofile(Config::SNAPSHOT_DIR);
     }
+}
+
+void Server::joinCluster(const std::string &bootstrap_ip, uint16_t bootstrap_port) {
+    std::cout << "Try to join Cluster..." << std::endl;
+    Socket sock;
+    sock.connect(bootstrap_ip, bootstrap_port);
+    // 设置socket为非阻塞模式
+    int fd = sock.fd();
+    int flags = fcntl(fd, F_SETFL, 0);
+    if (flags == -1) {
+        throw std::runtime_error("fcntl(F_GETFL) error: " + std::string(strerror(errno)));
+    }
+    if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) == -1) {
+        throw std::runtime_error("fcntl(F_SETFL) error: " + std::string(strerror(errno)));
+    }
+
+    if (send("*1\r\n+GETNETWORK\r\n", sock) == -1) {
+        throw std::runtime_error("GETNETWORK failed");
+    }
+    while (!sock.parser().hasResult()) {
+        std::string str = recv(sock);
+        sock.parser().append(str);
+    }
+    auto topo = Utils::getTopo(sock.parser().getResult().value());
+
+    for (auto &node : topo) {
+        getCluster().addTopoNode(node);
+        getCluster().addNodeToHash(node.UUID);
+        if (node.ip == bootstrap_ip && node.port == bootstrap_port) {
+            getCluster().addConnection(node.UUID, sock.fd());
+        }
+    }
+
+    if (send("*2\r\n+HELLO\r\n+" + std::to_string(getCluster().getSelf().UUID) + "\r\n", sock) == -1) {
+        throw std::runtime_error("SEND HELLO failed");
+    }
+
+    while (!sock.parser().hasResult()) {
+        sock.parser().append(recv(sock));
+    }
+    // 里边是个+OK
+    sock.parser().reset();
+    uint64_t msg_UUID = getCluster().generateUUID();
+    getCluster().addGossip(msg_UUID);
+    if (send("*3\r\n+NODEIN\r\n+" + std::to_string(msg_UUID) + "\r\n" + resp::encodeNode(getCluster().getSelf()), sock) == -1) {
+        throw std::runtime_error("gossip:NODEIN failed");
+    }
+    // 将socket添加到epoll
+    epoll_event event{};
+
+    event.data.fd = fd;
+
+    event.events = EPOLLIN | EPOLLET;
+
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &event) == -1) {
+        throw std::runtime_error("Epoll add error: " + std::string(strerror(errno)));
+    }
+
+    connections[fd] = std::move(sock);
+
+    std::cout << "Joined to Cluster" << std::endl;
 }

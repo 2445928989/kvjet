@@ -21,6 +21,14 @@ public:
     // 从文件读入快照，传入路径
     void readfromfile(std::string dir)
         requires(std::same_as<T, resp::RespValue>);
+    // 遍历所有key-value对，callable接收(const std::string&, T*)
+    template <typename Func>
+    void forEach(Func callback) {
+        for (auto &shard : shards) {
+            std::shared_lock lock(shard->lock);
+            shard->data.forEach(callback);
+        }
+    }
 
 private:
     size_t shardCount;
