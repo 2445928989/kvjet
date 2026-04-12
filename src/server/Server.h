@@ -89,6 +89,8 @@ private:
     Socket server_sock;
     // epoll标识符
     int epoll_fd;
+    // eventfd用于唤醒epoll
+    int eventfd_fd = -1;
     // epoll事件
     epoll_event events[Config::MAX_EVENTS];
     // 线程池

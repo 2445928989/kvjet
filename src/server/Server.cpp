@@ -5,6 +5,7 @@
 #include <climits>
 #include <csignal>
 #include <iostream>
+#include <sys/eventfd.h>
 #include <sys/fcntl.h>
 #include <sys/socket.h>
 Server::Server(const std::string &ip, uint16_t port) : server_sock(), threadPool(Config::THREAD_COUNT), kvstore(), aof(Config::AOF_DIR), cluster(port + 1, ip) {
@@ -28,6 +29,19 @@ Server::Server(const std::string &ip, uint16_t port) : server_sock(), threadPool
     if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, server_sock.fd(), &event) == -1) {
         throw std::runtime_error("Epoll add error: " + std::string(strerror(errno)));
     }
+
+    // 初始化 eventfd 用于唤醒 epoll
+    eventfd_fd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
+    if (eventfd_fd == -1) {
+        throw std::runtime_error("Eventfd error: " + std::string(strerror(errno)));
+    }
+    epoll_event event_fd_event{};
+    event_fd_event.data.fd = eventfd_fd;
+    event_fd_event.events = EPOLLIN | EPOLLET;
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, eventfd_fd, &event_fd_event) == -1) {
+        throw std::runtime_error("Epoll add eventfd error: " + std::string(strerror(errno)));
+    }
+
     kvstore.readfromfile(Config::SNAPSHOT_DIR);
     aof.recover(*this);
     std::cout << "Server Started" << std::endl;
@@ -35,6 +49,9 @@ Server::Server(const std::string &ip, uint16_t port) : server_sock(), threadPool
 Server::~Server() {
     if (epoll_fd != -1) {
         ::close(epoll_fd);
+    }
+    if (eventfd_fd != -1) {
+        ::close(eventfd_fd);
     }
     running = false;
     if (snapshot_thread.joinable()) {
@@ -98,6 +115,11 @@ void Server::handleCommand(int sock, resp::RespValue value) {
         return;
     std::unique_lock<std::mutex> lock(queueMutex);
     message_queue.emplace(std::move(message), sock);
+    lock.unlock();
+
+    // 唤醒 epoll
+    uint64_t one = 1;
+    ::write(eventfd_fd, &one, sizeof(one));
 }
 bool Server::accept() {
     Socket sock = server_sock.accept();
@@ -166,14 +188,20 @@ void Server::sendDataToNode(uint64_t target_uuid) {
     });
 }
 void Server::epoll_step() {
-    int event_num = epoll_wait(epoll_fd, events, Config::MAX_EVENTS, 0);
+    int event_num = epoll_wait(epoll_fd, events, Config::MAX_EVENTS, 1);
     if (event_num == -1) {
-        throw std::runtime_error("Epoll wait error");
+        if (errno == EINTR)
+            return; // 被信号中断，继续循环
+        throw std::runtime_error("Epoll wait error: " + std::string(strerror(errno)));
     }
     for (size_t i = 0; i < (size_t)event_num; i++) {
         if (events[i].data.fd == server_sock.fd()) {
             while (accept()) {
             }
+        } else if (events[i].data.fd == eventfd_fd) {
+            // eventfd 被唤醒，清空计数器
+            uint64_t val;
+            ::read(eventfd_fd, &val, sizeof(val));
         } else {
             int client_fd = events[i].data.fd;
             std::string str = recv(connections[client_fd]);
