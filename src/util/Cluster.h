@@ -3,6 +3,8 @@
 #include "../util/Socket.h"
 #include <chrono>
 #include <cstdint>
+#include <functional>
+#include <iostream>
 #include <map>
 #include <mutex>
 #include <set>
@@ -59,7 +61,14 @@ public:
     const Node &getSelf() { return self_node; }
     uint64_t generateUUID();
 
+    // 心跳相关
+    using SendCallback = std::function<void(const std::string &, int)>;
+    void setSendCallback(SendCallback cb) { send_cb = std::move(cb); }
+    void updateHeartbeat(int fd);
+
 private:
+    void sendHeartbeats();
+    void checkTimeouts();
     volatile bool running = false;
     Node self_node;
     std::thread heartbeat_thread;
@@ -68,15 +77,20 @@ private:
     std::shared_mutex heartbeat_time_lock;
     std::shared_mutex connections_lock;
     std::shared_mutex topo_lock;
+    std::shared_mutex fd_to_uuid_lock;
     // 维护一致性哈希
     std::map<uint64_t, uint64_t> node_hash;
     // 维护每个节点上次收到心跳包的时间戳
     std::map<uint64_t, uint64_t> heartbeat_time;
     // 维护node_id到fd的映射
     std::map<uint64_t, int> connections;
+    // fd到node_id的反向映射
+    std::map<int, uint64_t> fd_to_uuid;
     // 完整的网络拓扑
     std::map<uint64_t, Node> topo;
     int heartbeat_listensock;
     int epoll_fd;
     std::map<uint64_t, uint64_t> gossip_cache;
+    // 发送回调，心跳线程通过它将消息推入Server消息队列
+    SendCallback send_cb;
 };

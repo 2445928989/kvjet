@@ -7,8 +7,10 @@
 #include "../util/Cluster.h"
 #include "../util/Socket.h"
 #include "../util/ThreadPool.h"
+#include <atomic>
 #include <cerrno>
 #include <cstdint>
+#include <iostream>
 #include <map>
 #include <optional>
 #include <string>
@@ -68,6 +70,19 @@ public:
 
     void requestShutdown() { shutdown_requested = true; }
 
+    // 同步状态：新节点加入集群后，在数据迁移完成前处于 syncing 状态
+    void markSyncing(int expected_nodes) {
+        pending_sync_nodes.store(expected_nodes);
+        syncing.store(true);
+    }
+    void onSyncDone() {
+        if (pending_sync_nodes.fetch_sub(1) == 1) {
+            syncing.store(false);
+            std::cout << "Sync complete, server is now running." << std::endl;
+        }
+    }
+    bool isSyncing() const { return syncing.load(); }
+
 private:
     // 存储引擎
     KVStore<resp::RespValue> kvstore;
@@ -77,6 +92,10 @@ private:
     volatile bool running = false;
     // 是否请求关闭
     volatile bool shutdown_requested = false;
+    // 是否正在同步数据
+    std::atomic<bool> syncing{false};
+    // 还有几个节点未完成数据同步
+    std::atomic<int> pending_sync_nodes{0};
     // 快照线程
     std::thread snapshot_thread;
     // 消息队列锁

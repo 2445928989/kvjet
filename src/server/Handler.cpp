@@ -12,6 +12,17 @@ std::string Handler::handle(resp::RespValue request, Server &server, int fd) {
             throw std::runtime_error("Empty request!!");
         }
         if (auto command = std::get_if<resp::SimpleString>((*it->value->begin())->getPtr())) {
+            if (command->value == "SYNCDONE") {
+                return SYNCDONE(std::move(request), server);
+            }
+            if (command->value == "HEARTBEAT") {
+                return HEARTBEAT(std::move(request), server, fd);
+            }
+            // 同步期间拒绝客户端数据命令，集群内部命令照常处理
+            if (server.isSyncing() && (command->value == "SET" || command->value == "GET" ||
+                                       command->value == "DEL" || command->value == "EXIST")) {
+                return resp::encode(resp::RespValue(resp::Error("LOADING server is syncing, please retry")));
+            }
             if (command->value == "GET") {
                 return GET(std::move(request), server);
             } else if (command->value == "SET") {
@@ -244,6 +255,19 @@ std::string Handler::NODEOUT(resp::RespValue request, Server &server) {
     } else {
         throw std::runtime_error("NODEOUT: node_id is not a SimpleString");
     }
+}
+std::string Handler::HEARTBEAT(resp::RespValue request, Server &server, int fd) {
+    server.getCluster().updateHeartbeat(fd);
+    return "";
+}
+
+std::string Handler::SYNCDONE(resp::RespValue request, Server &server) {
+    auto it = std::get_if<resp::Array>(request.getPtr());
+    if (it->value->size() < 2) {
+        throw std::runtime_error("SYNCDONE: missing node UUID");
+    }
+    server.onSyncDone();
+    return "";
 }
 std::string Handler::HELLO(resp::RespValue request, Server &server, int fd) {
     auto it = std::get_if<resp::Array>(request.getPtr());

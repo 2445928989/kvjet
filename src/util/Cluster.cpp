@@ -24,11 +24,69 @@ Cluster::~Cluster() {
 }
 
 void Cluster::heartbeatLoop() {
-    // 备忘：心跳包时间戳直接通过读发过来的确定UUID，如果心跳包不在topo里就直接弃
     while (running) {
-        for (auto &[id, fd] : connections) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(Config::HEARTBEAT_INTERVAL_MS));
+        if (!running)
+            break;
+        sendHeartbeats();
+        checkTimeouts();
+    }
+}
+
+void Cluster::sendHeartbeats() {
+    std::shared_lock lock(connections_lock);
+    auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+                   std::chrono::system_clock::now().time_since_epoch())
+                   .count();
+    for (auto &[uuid, fd] : connections) {
+        if (fd == -1 || !send_cb)
+            continue;
+        // 同时也更新自己的心跳时间戳（自身永远存活）
+        {
+            std::unique_lock hb_lock(heartbeat_time_lock);
+            heartbeat_time[self_node.UUID] = now;
+        }
+        send_cb("*2\r\n+HEARTBEAT\r\n+" + std::to_string(self_node.UUID) + "\r\n", fd);
+    }
+}
+
+void Cluster::checkTimeouts() {
+    auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+                   std::chrono::system_clock::now().time_since_epoch())
+                   .count();
+    std::vector<uint64_t> dead;
+    {
+        std::shared_lock lock(heartbeat_time_lock);
+        for (auto &[uuid, ts] : heartbeat_time) {
+            if (uuid == self_node.UUID)
+                continue;
+            if (now - ts > Config::HEARTBEAT_TIMEOUT_MS) {
+                dead.push_back(uuid);
+            }
         }
     }
+    for (auto uuid : dead) {
+        std::cerr << "[Cluster] Node " << uuid << " timed out, removing."
+                  << std::endl;
+        delNodeToHash(uuid);
+        delTopoNode(uuid);
+    }
+}
+
+void Cluster::updateHeartbeat(int fd) {
+    uint64_t uuid = 0;
+    {
+        std::shared_lock lock(fd_to_uuid_lock);
+        auto it = fd_to_uuid.find(fd);
+        if (it == fd_to_uuid.end())
+            return;
+        uuid = it->second;
+    }
+    auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+                   std::chrono::system_clock::now().time_since_epoch())
+                   .count();
+    std::unique_lock lock(heartbeat_time_lock);
+    heartbeat_time[uuid] = now;
 }
 
 void Cluster::addNodeToHash(uint64_t node_id) {
@@ -123,10 +181,7 @@ void Cluster::addGossip(uint64_t UUID) {
 }
 
 void Cluster::delTopoNode(uint64_t UUID) {
-    {
-        std::unique_lock<std::shared_mutex> lock(connections_lock);
-        connections.erase(UUID);
-    }
+    delConnection(UUID);
     {
         std::unique_lock<std::shared_mutex> lock(topo_lock);
         topo.erase(UUID);
@@ -143,8 +198,12 @@ void Cluster::addTopoNode(Cluster::Node node) {
 }
 
 void Cluster::addConnection(uint64_t UUID, int fd) {
-    std::unique_lock<std::shared_mutex> lock(connections_lock);
-    connections[UUID] = fd;
+    {
+        std::unique_lock<std::shared_mutex> lock(connections_lock);
+        connections[UUID] = fd;
+    }
+    std::unique_lock<std::shared_mutex> lock(fd_to_uuid_lock);
+    fd_to_uuid[fd] = UUID;
 }
 uint64_t Cluster::generateUUID() {
     static std::random_device rd;
@@ -160,5 +219,19 @@ int Cluster::getConnection(uint64_t UUID) {
         return it->second;
 }
 void Cluster::delConnection(uint64_t UUID) {
-    connections.erase(UUID);
+    int fd = -1;
+    {
+        std::shared_lock lock(connections_lock);
+        auto it = connections.find(UUID);
+        if (it != connections.end())
+            fd = it->second;
+    }
+    if (fd != -1) {
+        std::unique_lock lock(fd_to_uuid_lock);
+        fd_to_uuid.erase(fd);
+    }
+    {
+        std::unique_lock lock(connections_lock);
+        connections.erase(UUID);
+    }
 }

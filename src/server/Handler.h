@@ -20,4 +20,6 @@ namespace Handler {
     std::string NODEIN(resp::RespValue request, Server &server);
     std::string NODEOUT(resp::RespValue request, Server &server);
     std::string HELLO(resp::RespValue request, Server &server, int fd);
+    std::string SYNCDONE(resp::RespValue request, Server &server);
+    std::string HEARTBEAT(resp::RespValue request, Server &server, int fd);
 }

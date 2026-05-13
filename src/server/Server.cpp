@@ -42,6 +42,12 @@ Server::Server(const std::string &ip, uint16_t port) : server_sock(), threadPool
         throw std::runtime_error("Epoll add eventfd error: " + std::string(strerror(errno)));
     }
 
+    // 设置心跳发送回调：推入消息队列，由主线程统一发送
+    cluster.setSendCallback([this](const std::string &msg, int fd) {
+        std::unique_lock<std::mutex> lock(queueMutex);
+        message_queue.emplace(msg, fd);
+    });
+
     kvstore.readfromfile(Config::SNAPSHOT_DIR);
     aof.recover(*this);
     std::cout << "Server Started" << std::endl;
@@ -186,6 +192,14 @@ void Server::sendDataToNode(uint64_t target_uuid) {
             message_queue.emplace(std::move(cmd), target_fd);
         }
     });
+
+    // 通知目标节点：本轮数据迁移结束
+    {
+        std::unique_lock<std::mutex> lock(queueMutex);
+        message_queue.emplace(
+            "*2\r\n+SYNCDONE\r\n+" + std::to_string(cluster.getSelf().UUID) + "\r\n",
+            target_fd);
+    }
 }
 void Server::epoll_step() {
     int event_num = epoll_wait(epoll_fd, events, Config::MAX_EVENTS, 1);
@@ -251,6 +265,7 @@ void Server::epoll_step() {
 }
 void Server::run() {
     running = true;
+    cluster.start();
     snapshot_thread = std::thread([this] { snapshotLoop(); });
     while (running && !shutdown_requested) {
         epoll_step();
@@ -323,6 +338,9 @@ void Server::joinCluster(const std::string &bootstrap_ip, uint16_t bootstrap_por
         sock.parser().append(str);
     }
     auto topo = Utils::getTopo(sock.parser().getResult().value());
+
+    // 进入同步状态：所有现有节点将向我推送属于我的数据
+    markSyncing(static_cast<int>(topo.size()));
 
     for (auto &node : topo) {
         getCluster().addTopoNode(node);
