@@ -16,10 +16,10 @@ public:
     // 禁止拷贝
     Client(const Client &) = delete;
     Client &operator=(const Client &) = delete;
-    // 发送请求，返回长度，不成功时返回-1
-    ssize_t send(const std::string &request, const std::string &key);
-    // 接收消息
-    std::string recv(const std::string &key);
+    // 发送请求，is_read 决定路由策略
+    ssize_t send(const std::string &request, const std::string &key, bool is_read);
+    // 接收消息，指定 fd（与 send 返回的路由一致）
+    std::string recv(int target_fd);
     // 辅助方法：获取Socket引用
     Socket &getSocket(int fd);
     // 运行循环
@@ -33,8 +33,21 @@ public:
     resp::RespValue handle(std::string);
     // 从RespValue中提取key（用于路由）
     std::string extractKeyFromRequest(const resp::RespValue &req);
+    // 判断命令类型
+    static bool isReadCommand(const std::string &cmd);
+    static bool isWriteCommand(const std::string &cmd);
+    // 根据命令和 key 决定路由目标
+    uint64_t routeTarget(const std::string &cmd, const std::string &key);
+    // 读写路由：读随机，写走哈希环
+    uint64_t routeRead(const std::string &key);
+    uint64_t routeWrite(const std::string &key);
+
+    // MOVED 处理和拓扑刷新
+    static bool isMovedResponse(const std::string &resp);
+    void refreshTopology();
 
 private:
     Cluster cluster;
     std::map<int, Socket> connections;
+    int last_sent_fd = -1;
 };

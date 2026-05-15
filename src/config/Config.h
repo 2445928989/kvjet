@@ -60,4 +60,8 @@ namespace Config {
 
     // 心跳超时判定（毫秒）
     constexpr int HEARTBEAT_TIMEOUT_MS = 3000; // 3秒
+
+    // ========== Raft 配置 ==========
+    // Raft 日志持久化目录
+    constexpr std::string RAFT_LOG_DIR = "data/raft/";
 }

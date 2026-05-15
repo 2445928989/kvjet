@@ -68,13 +68,14 @@ Socket &Client::getSocket(int fd) {
     return it->second;
 }
 
-ssize_t Client::send(const std::string &request, const std::string &key) {
-    uint64_t target_uuid = cluster.queryNode(key);
+ssize_t Client::send(const std::string &request, const std::string &key, bool is_read) {
+    uint64_t target_uuid = is_read ? routeRead(key) : routeWrite(key);
     int target_fd = cluster.getConnection(target_uuid);
     if (target_fd == -1) {
         throw std::runtime_error("Failed to get connection for node UUID: " + std::to_string(target_uuid));
     }
 
+    last_sent_fd = target_fd;
     Socket &target_sock = getSocket(target_fd);
     if (request.size() > static_cast<size_t>(SSIZE_MAX)) {
         throw std::runtime_error("Request too long");
@@ -97,13 +98,10 @@ ssize_t Client::send(const std::string &request, const std::string &key) {
     return static_cast<ssize_t>(sent);
 }
 
-std::string Client::recv(const std::string &key) {
-    uint64_t target_uuid = cluster.queryNode(key);
-    int target_fd = cluster.getConnection(target_uuid);
+std::string Client::recv(int target_fd) {
     if (target_fd == -1) {
-        throw std::runtime_error("Failed to get connection for node UUID: " + std::to_string(target_uuid));
+        throw std::runtime_error("Invalid target fd");
     }
-
     Socket &target_sock = getSocket(target_fd);
 
     char buf[1024];
@@ -130,12 +128,81 @@ void Client::run() {
                 }
             } else {
                 std::string key = extractKeyFromRequest(req);
-                send(resp::encode(req), key);
-                std::cout << recv(key) << '\n';
+                bool is_read = isReadCommand(
+                    std::get_if<resp::SimpleString>(
+                        std::get_if<resp::Array>(req.getPtr())->value->begin()->get()->getPtr()
+                    )->value);
+                std::string encoded = resp::encode(req);
+                send(encoded, key, is_read);
+                std::string resp = recv(last_sent_fd);
+                // MOVED 重试
+                if (isMovedResponse(resp)) {
+                    std::cout << resp << " (retrying...)" << std::endl;
+                    refreshTopology();
+                    send(encoded, key, is_read);
+                    resp = recv(last_sent_fd);
+                }
+                std::cout << resp << '\n';
             }
         }
         std::cout << ">>> ";
     }
+}
+
+bool Client::isMovedResponse(const std::string &resp) {
+    return resp.rfind("-MOVED", 0) == 0;  // 以 -MOVED 开头
+}
+
+void Client::refreshTopology() {
+    if (connections.empty()) return;
+    // 拿任意一个节点的连接发 GETNETWORK
+    int any_fd = connections.begin()->first;
+
+    std::string cmd = "*1\r\n+GETNETWORK\r\n";
+    size_t sent = 0;
+    while (sent < cmd.size()) {
+        ssize_t n = ::send(any_fd, cmd.c_str() + sent, cmd.size() - sent, MSG_NOSIGNAL);
+        if (n <= 0) throw std::runtime_error("Failed to send GETNETWORK");
+        sent += n;
+    }
+
+    Socket &sock = getSocket(any_fd);
+    sock.parser().reset();
+    while (!sock.parser().hasResult()) {
+        char buf[1024];
+        ssize_t n = ::recv(any_fd, buf, sizeof(buf), 0);
+        if (n <= 0) throw std::runtime_error("Failed to recv GETNETWORK");
+        sock.parser().append(std::string(buf, n));
+    }
+
+    auto topo_vec = Utils::getTopo(sock.parser().getResult().value());
+
+    // 更新哈希环
+    for (auto &node : topo_vec) {
+        cluster.addTopoNode(node);
+        cluster.addNodeToHash(node.UUID);
+    }
+
+    // 连接新节点
+    for (auto &node : topo_vec) {
+        // 检查是否已有连接
+        bool already = false;
+        for (auto &[f, _] : connections) {
+            (void)_;
+            if (cluster.getConnection(node.UUID) == f) { already = true; break; }
+        }
+        if (already) continue;
+
+        Socket sock2;
+        sock2.connect(node.ip, node.port);
+        int fd = sock2.fd();
+        cluster.addConnection(node.UUID, fd);
+        connections[fd] = std::move(sock2);
+        std::cout << "Connected to " << node.ip << ":" << node.port
+                  << " (UUID: " << node.UUID << ")" << std::endl;
+    }
+
+    std::cout << "Topology refreshed." << std::endl;
 }
 
 resp::RespValue Client::handle(std::string req) {
@@ -211,11 +278,8 @@ resp::RespValue Client::handle(std::string req) {
 
 std::string Client::extractKeyFromRequest(const resp::RespValue &req) {
     auto arr = std::get_if<resp::Array>(req.getPtr());
-    if (arr->value->size() < 2) {
+    if (!arr || !arr->value || arr->value->size() < 2) {
         return "";
-    }
-    if (!arr || !arr->value) {
-        throw std::runtime_error("Invalid request format");
     }
     auto key_ptr = arr->value.value()[1].get();
     if (auto key_str = std::get_if<resp::SimpleString>(key_ptr->getPtr())) {
@@ -225,44 +289,67 @@ std::string Client::extractKeyFromRequest(const resp::RespValue &req) {
     }
 }
 
+bool Client::isReadCommand(const std::string &cmd) {
+    return cmd == "GET" || cmd == "EXIST";
+}
+
+bool Client::isWriteCommand(const std::string &cmd) {
+    return cmd == "SET" || cmd == "DEL";
+}
+
+uint64_t Client::routeRead(const std::string &key) {
+    (void)key;
+    return cluster.randomNode();
+}
+
+uint64_t Client::routeWrite(const std::string &key) {
+    return cluster.queryNode(key);
+}
+
+uint64_t Client::routeTarget(const std::string &cmd, const std::string &key) {
+    return isReadCommand(cmd) ? routeRead(key) : routeWrite(key);
+}
+
 std::mt19937 rnd(time(0));
 
 void Client::benchmark(int ops, const std::string &op_type) {
     std::cout << "Start benchmark..." << std::endl;
 
     int batch_size = 5000;
-    std::map<uint64_t, std::vector<std::pair<std::string, std::string>>> pending; // uuid -> [(encoded, key), ...]
+    std::map<uint64_t, std::vector<std::pair<std::string, std::string>>> pending;
 
     auto start = std::chrono::high_resolution_clock::now();
 
     for (int i = 0; i < ops; i++) {
         std::string req;
+        bool is_read;
         if (op_type == "set") {
             req = "SET key" + std::to_string(rnd() % 100000) + " value" + std::to_string(rnd() % 100000);
+            is_read = false;
         } else if (op_type == "get") {
             req = "GET key" + std::to_string(rnd() % 100000);
-        } else if (op_type == "mixed") {
+            is_read = true;
+        } else { // mixed
             if (i % 2) {
                 req = "SET key" + std::to_string(rnd() % 100000) + " value" + std::to_string(rnd() % 100000);
+                is_read = false;
             } else {
                 req = "GET key" + std::to_string(rnd() % 100000);
+                is_read = true;
             }
         }
 
         resp::RespValue request = handle(std::move(req));
         std::string key = extractKeyFromRequest(request);
-        uint64_t target_uuid = cluster.queryNode(key);
+        uint64_t target_uuid = is_read ? routeRead(key) : routeWrite(key);
         std::string encoded = resp::encode(request);
 
         pending[target_uuid].push_back({encoded, key});
 
-        // 如果某个节点的batch达到batch_size，立即发送并接收
         if (pending[target_uuid].size() >= batch_size) {
-            // 发送全部
             for (const auto &[enc, k] : pending[target_uuid]) {
-                send(enc, k);
+                send(enc, k, is_read);
             }
-            // 接收全部
             int remaining = pending[target_uuid].size();
             int target_fd = cluster.getConnection(target_uuid);
             Socket &target_sock = getSocket(target_fd);
@@ -282,13 +369,10 @@ void Client::benchmark(int ops, const std::string &op_type) {
         }
     }
 
-    // 处理剩余的pending操作
     for (auto &[uuid, ops_list] : pending) {
-        // 发送全部
         for (const auto &[encoded, key] : ops_list) {
-            send(encoded, key);
+            send(encoded, key, false);
         }
-        // 接收全部
         int remaining = ops_list.size();
         int target_fd = cluster.getConnection(uuid);
         Socket &target_sock = getSocket(target_fd);
@@ -321,15 +405,20 @@ void Client::latencyBenchmark(int ops, const std::string &op_type) {
 
     for (int i = 0; i < ops; i++) {
         std::string req;
+        bool is_read;
         if (op_type == "set") {
             req = "SET key" + std::to_string(rnd() % 100000) + " value" + std::to_string(rnd() % 100000);
+            is_read = false;
         } else if (op_type == "get") {
             req = "GET key" + std::to_string(rnd() % 100000);
-        } else if (op_type == "mixed") {
+            is_read = true;
+        } else { // mixed
             if (i % 2) {
                 req = "SET key" + std::to_string(rnd() % 100000) + " value" + std::to_string(rnd() % 100000);
+                is_read = false;
             } else {
                 req = "GET key" + std::to_string(rnd() % 100000);
+                is_read = true;
             }
         }
 
@@ -337,16 +426,11 @@ void Client::latencyBenchmark(int ops, const std::string &op_type) {
         std::string key = extractKeyFromRequest(request);
         std::string encoded = resp::encode(request);
 
-        // 记录发送时间
         auto send_time = std::chrono::high_resolution_clock::now();
-        send(encoded, key);
+        send(encoded, key, is_read);
 
-        // 获取对应的socket和parser
-        uint64_t target_uuid = cluster.queryNode(key);
-        int target_fd = cluster.getConnection(target_uuid);
-        Socket &target_sock = getSocket(target_fd);
+        Socket &target_sock = getSocket(last_sent_fd);
 
-        // 等待响应
         target_sock.parser().reset();
         while (!target_sock.parser().hasResult()) {
             char buf[4096];
@@ -357,11 +441,10 @@ void Client::latencyBenchmark(int ops, const std::string &op_type) {
         }
 
         auto recv_time = std::chrono::high_resolution_clock::now();
-        target_sock.parser().pop(); // 移除已处理的结果
+        target_sock.parser().pop();
 
-        // 计算延迟（微秒）
         auto latency_us = std::chrono::duration_cast<std::chrono::microseconds>(recv_time - send_time).count();
-        latencies.push_back(latency_us / 1000.0); // 转换为毫秒
+        latencies.push_back(latency_us / 1000.0);
 
         if ((i + 1) % (ops / 10) == 0 || i == 0) {
             std::cout << "Progress: " << (i + 1) << "/" << ops << std::endl;

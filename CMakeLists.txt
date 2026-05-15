@@ -33,6 +33,11 @@ set(KVSTORE_SOURCES
     src/kvstore/LRU.cpp
 )
 
+# Raft协议源文件
+set(RAFT_SOURCES
+    src/raft/RaftNode.cpp
+)
+
 # RESP协议源文件
 set(RESP_SOURCES
     src/resp/RespValue.cpp
@@ -51,6 +56,7 @@ set(CLIENT_SOURCES
     src/client/Client.cpp
     ${UTIL_SOURCES}
     ${RESP_SOURCES}
+    ${RAFT_SOURCES}
 )
 
 # 服务端源文件
@@ -60,6 +66,7 @@ set(SERVER_SOURCES
     ${UTIL_SOURCES}
     ${KVSTORE_SOURCES}
     ${RESP_SOURCES}
+    ${RAFT_SOURCES}
 )
 
 find_package(Threads REQUIRED)

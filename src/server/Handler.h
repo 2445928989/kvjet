@@ -22,4 +22,5 @@ namespace Handler {
     std::string HELLO(resp::RespValue request, Server &server, int fd);
     std::string SYNCDONE(resp::RespValue request, Server &server);
     std::string HEARTBEAT(resp::RespValue request, Server &server, int fd);
+    std::string handleRaft(resp::RespValue request, Server &server, int fd);
 }

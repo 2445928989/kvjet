@@ -3,6 +3,7 @@
 #include "../config/Config.h"
 #include "../kvstore/AOF.h"
 #include "../kvstore/KVStore.h"
+#include "../raft/RaftNode.h"
 #include "../resp/RespValue.h"
 #include "../util/Cluster.h"
 #include "../util/Socket.h"
@@ -83,6 +84,11 @@ public:
     }
     bool isSyncing() const { return syncing.load(); }
 
+    // Raft 组管理
+    void     initRaftGroups();
+    RaftNode *getRaftGroup(uint64_t gid);
+    RaftNode *getGroupForKey(const std::string &key);
+
 private:
     // 存储引擎
     KVStore<resp::RespValue> kvstore;
@@ -116,4 +122,11 @@ private:
     ThreadPool threadPool;
     // 集群类
     Cluster cluster;
+
+    // Raft 组 (group_id → RaftNode)
+    std::map<uint64_t, RaftNode> raft_groups;
+    // UUID → 该 UUID 作为 master 的 group_id
+    std::map<uint64_t, uint64_t> masterToGroup;
+
+    RaftNode::SendCb makeRaftSendCb();
 };

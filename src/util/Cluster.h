@@ -33,6 +33,10 @@ public:
     void delNodeToHash(uint64_t node_id);
     // 查询需要询问的节点
     uint64_t queryNode(const std::string &str);
+    // 返回 key 的 N 个不同物理节点（顺时针，用于副本集合）
+    std::vector<uint64_t> queryReplicas(const std::string &key, int N);
+    // 自己是不是这个 key 的 master（哈希环 lower_bound 命中的第一个节点）
+    bool isMasterFor(const std::string &key);
     // 哈希节点
     uint64_t hash(uint64_t x);
     // 哈希字符串
@@ -58,8 +62,12 @@ public:
     void addConnection(uint64_t UUID, int fd);
     void delConnection(uint64_t UUID);
     int getConnection(uint64_t UUID);
+    uint64_t getUuidByFd(int fd) const;  // fd → UUID 反向查找
     const Node &getSelf() { return self_node; }
     uint64_t generateUUID();
+
+    // 随机返回一个拓扑中的节点（用于读请求随机路由）
+    uint64_t randomNode() const;
 
     // 心跳相关
     using SendCallback = std::function<void(const std::string &, int)>;
@@ -72,12 +80,12 @@ private:
     volatile bool running = false;
     Node self_node;
     std::thread heartbeat_thread;
-    std::shared_mutex node_hash_lock;
-    std::shared_mutex gossip_cache_lock;
-    std::shared_mutex heartbeat_time_lock;
-    std::shared_mutex connections_lock;
-    std::shared_mutex topo_lock;
-    std::shared_mutex fd_to_uuid_lock;
+    mutable std::shared_mutex node_hash_lock;
+    mutable std::shared_mutex gossip_cache_lock;
+    mutable std::shared_mutex heartbeat_time_lock;
+    mutable std::shared_mutex connections_lock;
+    mutable std::shared_mutex topo_lock;
+    mutable std::shared_mutex fd_to_uuid_lock;
     // 维护一致性哈希
     std::map<uint64_t, uint64_t> node_hash;
     // 维护每个节点上次收到心跳包的时间戳

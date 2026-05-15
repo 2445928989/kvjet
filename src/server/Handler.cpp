@@ -18,6 +18,11 @@ std::string Handler::handle(resp::RespValue request, Server &server, int fd) {
             if (command->value == "HEARTBEAT") {
                 return HEARTBEAT(std::move(request), server, fd);
             }
+            // Raft 消息分发
+            if (command->value == "RAFT_AE" || command->value == "RAFT_AER" ||
+                command->value == "RAFT_RV" || command->value == "RAFT_RVR") {
+                return handleRaft(std::move(request), server, fd);
+            }
             // 同步期间拒绝客户端数据命令，集群内部命令照常处理
             if (server.isSyncing() && (command->value == "SET" || command->value == "GET" ||
                                        command->value == "DEL" || command->value == "EXIST")) {
@@ -106,13 +111,38 @@ std::string Handler::SET(resp::RespValue request, Server &server) {
     if (it->value->size() != 3) {
         throw std::runtime_error("SET: Wrong number of arguments");
     }
-    auto key = std::move(it->value.value()[1]);
-    auto value = std::move(it->value.value()[2]);
-    if (auto key_ = std::get_if<resp::SimpleString>(key->getPtr())) {
-        auto deleted_key = server.getKVStore().set(std::move(key_->value), std::move(*value));
-        if (deleted_key.has_value()) {
-            server.getAOF().append(std::string("*2\r\n+DEL\r\n+" + deleted_key.value() + "\r\n"));
+
+    auto &key_elem = (*it->value)[1];
+    if (auto key_ = std::get_if<resp::SimpleString>(key_elem->getPtr())) {
+        std::string key_str = key_->value;
+
+        // 不是 master → 返回 MOVED
+        if (!server.getCluster().isMasterFor(key_str)) {
+            uint64_t master_uuid = server.getCluster().queryNode(key_str);
+            auto topo = server.getCluster().getTopo();
+            auto ni = topo.find(master_uuid);
+            std::string addr = (ni != topo.end())
+                ? ni->second.ip + ":" + std::to_string(ni->second.port)
+                : std::to_string(master_uuid);
+            return resp::encode(resp::RespValue(resp::Error("MOVED " + addr)));
         }
+
+        // 提取 value 字符串（在 move 之前）
+        std::string val_str;
+        if (auto val_elem = std::get_if<resp::BulkString>((*it->value)[2]->getPtr()))
+            val_str = *val_elem->value;
+        else if (auto val_s = std::get_if<resp::SimpleString>((*it->value)[2]->getPtr()))
+            val_str = val_s->value;
+
+        // Raft leader propose（异步复制到组内 follower）
+        auto *rn = server.getGroupForKey(key_str);
+        if (rn)
+            rn->propose("SET " + key_str + " " + val_str);
+
+        // 乐观 apply（Raft apply 异步兜底）
+        auto value = std::move((*it->value)[2]);
+        server.getKVStore().set(key_str, std::move(*value));
+
         resp::RespValue ret(resp::SimpleString("OK"));
         return resp::encode(ret);
     } else {
@@ -206,17 +236,24 @@ std::string Handler::NODEIN(resp::RespValue request, Server &server) {
         server.getCluster().addNodeToHash(new_node.UUID);
         server.getCluster().addTopoNode(std::move(new_node));
         server.sendDataToNode(new_node.UUID);
+        // 拓扑变了，重建 Raft 组
+        {
+            std::unique_lock<std::mutex> lock(server.getQueueMutex());
+            server.getMessageQueue().emplace("REBUILD_RAFTS", -2);
+        }
         return "";
     }
     {
         std::unique_lock<std::mutex> lock(server.getQueueMutex());
         server.getMessageQueue().emplace(new_node.ip + " " + std::to_string(new_node.port) + " " + std::to_string(new_node.UUID), -1);
     }
-    // 把这个节点加入拓扑和一致性哈希
     server.getCluster().addNodeToHash(new_node.UUID);
     server.getCluster().addTopoNode(std::move(new_node));
-
-    // 以消息队列的形式告诉主线程去连一下它
+    // 拓扑变了，重建 Raft 组
+    {
+        std::unique_lock<std::mutex> lock(server.getQueueMutex());
+        server.getMessageQueue().emplace("REBUILD_RAFTS", -2);
+    }
 
     return "";
 }
@@ -256,6 +293,23 @@ std::string Handler::NODEOUT(resp::RespValue request, Server &server) {
         throw std::runtime_error("NODEOUT: node_id is not a SimpleString");
     }
 }
+std::string Handler::handleRaft(resp::RespValue request, Server &server, int fd) {
+    auto it = std::get_if<resp::Array>(request.getPtr());
+    if (it->value->size() < 2) return "";
+
+    // 第二个元素是 group_id
+    uint64_t gid = 0;
+    if (auto gid_val = std::get_if<resp::SimpleString>((*it->value)[1]->getPtr()))
+        gid = Utils::to_uint64_t(gid_val->value);
+
+    auto *rn = server.getRaftGroup(gid);
+    if (!rn) return "";
+
+    uint64_t sender = server.getCluster().getUuidByFd(fd);
+    rn->step(sender, resp::encode(request));
+    return "";
+}
+
 std::string Handler::HEARTBEAT(resp::RespValue request, Server &server, int fd) {
     server.getCluster().updateHeartbeat(fd);
     return "";

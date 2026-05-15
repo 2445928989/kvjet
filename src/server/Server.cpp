@@ -201,6 +201,20 @@ void Server::sendDataToNode(uint64_t target_uuid) {
             target_fd);
     }
 }
+// 将 "SET key value" / "DEL key" 字符串转成 RespValue
+static resp::RespValue makeCommand(const std::string &cmd) {
+    std::istringstream iss(cmd);
+    std::vector<std::string> tokens;
+    std::string tok;
+    while (iss >> tok)
+        tokens.push_back(std::move(tok));
+    resp::Array arr;
+    arr.value = std::vector<std::unique_ptr<resp::RespValue>>();
+    for (auto &t : tokens)
+        arr.value->push_back(std::make_unique<resp::RespValue>(resp::SimpleString(std::move(t))));
+    return resp::RespValue(std::move(arr));
+}
+
 void Server::epoll_step() {
     int event_num = epoll_wait(epoll_fd, events, Config::MAX_EVENTS, 1);
     if (event_num == -1) {
@@ -252,6 +266,10 @@ void Server::epoll_step() {
             connect(ip, port, uuid);
             continue;
         }
+        if (message.second == -2) {
+            initRaftGroups();
+            continue;
+        }
         auto it = connections.find(message.second);
 
         if (it != connections.end())
@@ -262,10 +280,26 @@ void Server::epoll_step() {
             continue;
         }
     }
+
+    // Raft tick — 推进所有组的选举计时和心跳
+    for (auto &[gid, rn] : raft_groups) {
+        rn.tick();
+        // apply committed 条目到 KVStore
+        if (rn.hasPendingApply()) {
+            for (auto &entry : rn.takePendingApply()) {
+                // entry.command 格式: "SET key value" / "DEL key"
+                // 直接通过 handle_noAOF 执行，避免重复写 AOF
+                resp::RespValue cmd = makeCommand(entry.command);
+                std::string result = Handler::handle_noAOF(std::move(cmd), *this);
+                (void)result;
+            }
+        }
+    }
 }
 void Server::run() {
     running = true;
     cluster.start();
+    initRaftGroups();
     snapshot_thread = std::thread([this] { snapshotLoop(); });
     while (running && !shutdown_requested) {
         epoll_step();
@@ -378,4 +412,77 @@ void Server::joinCluster(const std::string &bootstrap_ip, uint16_t bootstrap_por
     connections[fd] = std::move(sock);
 
     std::cout << "Joined to Cluster" << std::endl;
+}
+
+// ============ Raft 组管理 ============
+
+RaftNode::SendCb Server::makeRaftSendCb() {
+    return [this](RaftMessage msg) {
+        int fd = cluster.getConnection(msg.target);
+        if (fd == -1) return;  // 对端尚未连接
+        std::unique_lock lock(queueMutex);
+        message_queue.emplace(std::move(msg.payload), fd);
+        lock.unlock();
+        uint64_t one = 1;
+        ::write(eventfd_fd, &one, sizeof(one));
+    };
+}
+
+void Server::initRaftGroups() {
+    auto topo = cluster.getTopo();
+    std::vector<uint64_t> nodeIds;
+    for (auto &[uuid, _] : topo)
+        nodeIds.push_back(uuid);
+    size_t N = nodeIds.size();
+    if (N == 0) return;
+
+    uint64_t self_uuid = cluster.getSelf().UUID;
+    size_t selfIdx = 0;
+    for (size_t i = 0; i < N; i++) {
+        if (nodeIds[i] == self_uuid) { selfIdx = i; break; }
+    }
+
+    raft_groups.clear();
+    masterToGroup.clear();
+    // 确保所有节点都在哈希环上
+    for (auto uid : nodeIds)
+        cluster.addNodeToHash(uid);
+
+    for (int offset = 0; offset >= -2; offset--) {
+        size_t gi = (selfIdx + offset + N) % N;
+        std::vector<uint64_t> members;
+        for (int j = 0; j < 3; j++)
+            members.push_back(nodeIds[(gi + j) % N]);
+
+        // peers = 组内其他节点，不含 self
+        std::vector<uint64_t> peers;
+        for (auto uid : members)
+            if (uid != self_uuid) peers.push_back(uid);
+
+        raft_groups.emplace(
+            std::piecewise_construct,
+            std::forward_as_tuple(gi),
+            std::forward_as_tuple(gi, self_uuid, peers, makeRaftSendCb(),
+                                  Config::RAFT_LOG_DIR));
+        // 组 gi 的 master 是 nodeIds[gi]
+        masterToGroup[nodeIds[gi]] = gi;
+    }
+
+    std::cout << "[Raft] Initialized " << raft_groups.size()
+              << " raft groups (N=" << N << ")" << std::endl;
+}
+
+RaftNode *Server::getRaftGroup(uint64_t gid) {
+    auto it = raft_groups.find(gid);
+    if (it != raft_groups.end())
+        return &it->second;
+    return nullptr;
+}
+
+RaftNode *Server::getGroupForKey(const std::string &key) {
+    uint64_t owner = cluster.queryNode(key);
+    auto it = masterToGroup.find(owner);
+    if (it != masterToGroup.end())
+        return getRaftGroup(it->second);
+    return nullptr;
 }

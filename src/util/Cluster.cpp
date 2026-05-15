@@ -117,6 +117,27 @@ uint64_t Cluster::queryNode(const std::string &str) {
     }
 }
 
+std::vector<uint64_t> Cluster::queryReplicas(const std::string &key, int N) {
+    std::shared_lock<std::shared_mutex> lock(node_hash_lock);
+    if (node_hash.empty()) return {self_node.UUID};
+    auto it = node_hash.lower_bound(hash(key));
+    if (it == node_hash.end()) it = node_hash.begin();
+    std::vector<uint64_t> result;
+    std::set<uint64_t> seen;
+    while (result.size() < static_cast<size_t>(N) && !node_hash.empty()) {
+        if (seen.insert(it->second).second)
+            result.push_back(it->second);
+        ++it;
+        if (it == node_hash.end()) it = node_hash.begin();
+        if (seen.size() >= node_hash.size()) break;
+    }
+    return result;
+}
+
+bool Cluster::isMasterFor(const std::string &key) {
+    return queryNode(key) == self_node.UUID;
+}
+
 uint64_t Cluster::hash(uint64_t x) {
     x ^= x >> 30;
     x *= 0xbf58476d1ce4e5b9ULL;
@@ -205,6 +226,26 @@ void Cluster::addConnection(uint64_t UUID, int fd) {
     std::unique_lock<std::shared_mutex> lock(fd_to_uuid_lock);
     fd_to_uuid[fd] = UUID;
 }
+uint64_t Cluster::randomNode() const {
+    std::shared_lock lock(topo_lock);
+    if (topo.empty())
+        return 0;
+    auto it = topo.begin();
+    static thread_local std::mt19937_64 rng(
+        std::chrono::steady_clock::now().time_since_epoch().count());
+    std::uniform_int_distribution<size_t> dist(0, topo.size() - 1);
+    std::advance(it, dist(rng));
+    return it->first;
+}
+
+uint64_t Cluster::getUuidByFd(int fd) const {
+    std::shared_lock lock(fd_to_uuid_lock);
+    auto it = fd_to_uuid.find(fd);
+    if (it != fd_to_uuid.end())
+        return it->second;
+    return 0;
+}
+
 uint64_t Cluster::generateUUID() {
     static std::random_device rd;
     static std::mt19937_64 gen(rd());
