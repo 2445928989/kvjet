@@ -64,6 +64,19 @@ void KVStore<T>::writetofile(std::string dir) requires (std::same_as<T,resp::Res
 }
 
 template <typename T>
+void KVStore<T>::writetofileFork(std::string dir) requires (std::same_as<T,resp::RespValue>){
+    // fork 子进程专用：无锁遍历，COW 保证数据一致性
+    if(std::filesystem::exists(dir)){
+        std::filesystem::remove_all(dir);
+    }
+    std::filesystem::create_directories(dir);
+    for(size_t i=0;i<shardCount;i++){
+        std::filesystem::path path=std::filesystem::path(dir)/("shard_"+std::to_string(i)+".snap");
+        shards[i]->data.writetofile(path.string());
+    }
+}
+
+template <typename T>
 void KVStore<T>::readfromfile(std::string dir) requires (std::same_as<T,resp::RespValue>){
     for(size_t i=0;i<shardCount;i++){
         std::filesystem::path path=std::filesystem::path(dir)/("shard_"+std::to_string(i)+".snap");

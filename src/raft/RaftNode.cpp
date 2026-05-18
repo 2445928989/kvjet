@@ -403,7 +403,7 @@ void RaftNode::loadFromDisk() {
     if (log.empty() || log[0].term != 0)
         log.insert(log.begin(), {0, ""});
     commitIndex = lastLogIndex();
-    lastApplied = lastLogIndex();
+    lastApplied = 0;  // 启动时重放所有已提交日志到 KVStore
     std::cout << "[Raft] Loaded " << (log.size() - 1)
               << " entries from " << logPath_ << std::endl;
 }

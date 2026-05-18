@@ -8,6 +8,8 @@
 #include <sys/eventfd.h>
 #include <sys/fcntl.h>
 #include <sys/socket.h>
+#include <sys/wait.h>
+#include <unistd.h>
 Server::Server(const std::string &ip, uint16_t port) : server_sock(), threadPool(Config::THREAD_COUNT), kvstore(), aof(Config::AOF_DIR), cluster(port + 1, ip) {
     memset(events, 0, sizeof(events));
     server_sock.bind("0.0.0.0", port);
@@ -345,8 +347,19 @@ void Server::gracefulShutdown() {
 void Server::snapshotLoop() {
     while (running) {
         std::this_thread::sleep_for(std::chrono::milliseconds(Config::SNAPSHOT_INTERVAL_MS));
+        if (!running) break;
+
+        pid_t pid = fork();
+        if (pid == 0) {
+            // 子进程：COW 保护，无锁遍历写快照
+            kvstore.writetofileFork(Config::SNAPSHOT_DIR);
+            _exit(0);
+        } else if (pid > 0) {
+            waitpid(pid, nullptr, 0);
+        }
+
+        // 快照完成后截断 AOF
         std::filesystem::resize_file(Config::AOF_DIR, 0);
-        kvstore.writetofile(Config::SNAPSHOT_DIR);
     }
 }
 

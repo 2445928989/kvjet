@@ -18,6 +18,9 @@ public:
     // 写入快照到文件，传入路径
     void writetofile(std::string dir)
         requires(std::same_as<T, resp::RespValue>);
+    // fork 子进程专用无锁快照（COW 保护一致性）
+    void writetofileFork(std::string dir)
+        requires(std::same_as<T, resp::RespValue>);
     // 从文件读入快照，传入路径
     void readfromfile(std::string dir)
         requires(std::same_as<T, resp::RespValue>);
