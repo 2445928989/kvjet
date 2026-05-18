@@ -419,7 +419,8 @@ void Server::joinCluster(const std::string &bootstrap_ip, uint16_t bootstrap_por
 RaftNode::SendCb Server::makeRaftSendCb() {
     return [this](RaftMessage msg) {
         int fd = cluster.getConnection(msg.target);
-        if (fd == -1) return;  // 对端尚未连接
+        if (fd == -1)
+            return; // 对端尚未连接
         std::unique_lock lock(queueMutex);
         message_queue.emplace(std::move(msg.payload), fd);
         lock.unlock();
@@ -434,16 +435,21 @@ void Server::initRaftGroups() {
     for (auto &[uuid, _] : topo)
         nodeIds.push_back(uuid);
     size_t N = nodeIds.size();
-    if (N == 0) return;
+    if (N == 0)
+        return;
 
     uint64_t self_uuid = cluster.getSelf().UUID;
     size_t selfIdx = 0;
     for (size_t i = 0; i < N; i++) {
-        if (nodeIds[i] == self_uuid) { selfIdx = i; break; }
+        if (nodeIds[i] == self_uuid) {
+            selfIdx = i;
+            break;
+        }
     }
 
     raft_groups.clear();
     masterToGroup.clear();
+    groupMembers_.clear();
     // 确保所有节点都在哈希环上
     for (auto uid : nodeIds)
         cluster.addNodeToHash(uid);
@@ -454,16 +460,29 @@ void Server::initRaftGroups() {
         for (int j = 0; j < 3; j++)
             members.push_back(nodeIds[(gi + j) % N]);
 
-        // peers = 组内其他节点，不含 self
+        // peers = 组内其他节点，不含 self，去重
         std::vector<uint64_t> peers;
-        for (auto uid : members)
-            if (uid != self_uuid) peers.push_back(uid);
+        {
+            std::set<uint64_t> seen;
+            for (auto uid : members)
+                if (uid != self_uuid && seen.insert(uid).second)
+                    peers.push_back(uid);
+        }
 
         raft_groups.emplace(
             std::piecewise_construct,
             std::forward_as_tuple(gi),
             std::forward_as_tuple(gi, self_uuid, peers, makeRaftSendCb(),
                                   Config::RAFT_LOG_DIR));
+        // 去重
+        {
+            std::set<uint64_t> seen;
+            std::vector<uint64_t> dedup;
+            for (auto uid : members)
+                if (seen.insert(uid).second)
+                    dedup.push_back(uid);
+            groupMembers_[gi] = std::move(dedup);
+        }
         // 组 gi 的 master 是 nodeIds[gi]
         masterToGroup[nodeIds[gi]] = gi;
     }

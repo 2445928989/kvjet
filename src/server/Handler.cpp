@@ -198,8 +198,22 @@ std::string Handler::EXIST(resp::RespValue request, Server &server) {
 }
 
 std::string Handler::GETNETWORK(Server &server) {
+    auto topo = server.getCluster().getTopo();
+    std::string ret = "*2\r\n";
 
-    return resp::encodeTopo(server.getCluster().getTopo());
+    // 第一部分：节点列表
+    ret += resp::encodeTopo(topo);
+
+    // 第二部分：组分配 — 每组包含 gid + 3 个成员 UUID
+    auto &gm = server.getGroupMembers();
+    std::string groups;
+    for (auto &[gid, members] : gm) {
+        groups += "*4\r\n+" + std::to_string(gid) + "\r\n";
+        for (size_t i = 0; i < 3; i++)
+            groups += "+" + std::to_string(i < members.size() ? members[i] : 0) + "\r\n";
+    }
+    ret += "*" + std::to_string(gm.size()) + "\r\n" + groups;
+    return ret;
 }
 
 // 简直是地狱。

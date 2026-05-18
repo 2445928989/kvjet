@@ -32,7 +32,7 @@ Client::Client(const std::string &ip, uint16_t port) : cluster() {
         sock.parser().append(std::string(buf, n));
     }
 
-    auto topo_vec = Utils::getTopo(sock.parser().getResult().value());
+    auto topo_vec = Utils::getTopoV2(sock.parser().getResult().value(), groups_);
     sock.parser().reset();
 
     // 加载拓扑到cluster
@@ -44,7 +44,6 @@ Client::Client(const std::string &ip, uint16_t port) : cluster() {
     // 连接到所有节点
     for (auto &node : topo_vec) {
         if (node.ip == ip && node.port == port) {
-            // 初始连接
             cluster.addConnection(node.UUID, sock.fd());
             connections[sock.fd()] = std::move(sock);
             continue;
@@ -56,6 +55,9 @@ Client::Client(const std::string &ip, uint16_t port) : cluster() {
         connections[fd] = std::move(other_sock);
         std::cout << "Connected to " << node.ip << ":" << node.port << " (UUID: " << node.UUID << ")" << std::endl;
     }
+
+    if (!groups_.empty())
+        std::cout << "Group info loaded: " << groups_.size() << " groups." << std::endl;
 }
 
 Client::~Client() {}
@@ -175,7 +177,7 @@ void Client::refreshTopology() {
         sock.parser().append(std::string(buf, n));
     }
 
-    auto topo_vec = Utils::getTopo(sock.parser().getResult().value());
+    auto topo_vec = Utils::getTopoV2(sock.parser().getResult().value(), groups_);
 
     // 更新哈希环
     for (auto &node : topo_vec) {
@@ -298,8 +300,26 @@ bool Client::isWriteCommand(const std::string &cmd) {
 }
 
 uint64_t Client::routeRead(const std::string &key) {
-    (void)key;
-    return cluster.randomNode();
+    auto replicas = getReplicasForKey(key);
+    if (replicas.empty())
+        return cluster.randomNode();
+    // 从组的副本列表中随机挑一个
+    static thread_local std::mt19937_64 rng(
+        std::chrono::steady_clock::now().time_since_epoch().count());
+    std::uniform_int_distribution<size_t> dist(0, replicas.size() - 1);
+    return replicas[dist(rng)];
+}
+
+std::vector<uint64_t> Client::getReplicasForKey(const std::string &key) {
+    // 通过一致性哈希找到 master UUID
+    uint64_t master = cluster.queryNode(key);
+    // 找 master 所在的组
+    for (auto &[gid, members] : groups_) {
+        if (!members.empty() && members[0] == master)
+            return members;  // 组的全部成员都可读
+    }
+    // 找不到组信息时回退到哈希环副本
+    return cluster.queryReplicas(key, 2);
 }
 
 uint64_t Client::routeWrite(const std::string &key) {

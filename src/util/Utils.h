@@ -14,4 +14,8 @@ namespace Utils {
 
     // 从Array格式的RespValue解包成vector<Node>
     std::vector<Cluster::Node> getTopo(resp::RespValue &&value);
+
+    // 从新的两段式 GETNETWORK 响应中解析组分配
+    std::vector<Cluster::Node> getTopoV2(resp::RespValue &&value,
+        std::map<uint64_t, std::vector<uint64_t>> &groups);
 }

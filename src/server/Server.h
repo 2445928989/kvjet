@@ -88,6 +88,8 @@ public:
     void     initRaftGroups();
     RaftNode *getRaftGroup(uint64_t gid);
     RaftNode *getGroupForKey(const std::string &key);
+    const std::map<uint64_t, RaftNode> &getRaftGroups() const { return raft_groups; }
+    const std::map<uint64_t, std::vector<uint64_t>> &getGroupMembers() const { return groupMembers_; }
 
 private:
     // 存储引擎
@@ -127,6 +129,8 @@ private:
     std::map<uint64_t, RaftNode> raft_groups;
     // UUID → 该 UUID 作为 master 的 group_id
     std::map<uint64_t, uint64_t> masterToGroup;
+    // group_id → 完整成员列表
+    std::map<uint64_t, std::vector<uint64_t>> groupMembers_;
 
     RaftNode::SendCb makeRaftSendCb();
 };

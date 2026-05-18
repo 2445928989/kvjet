@@ -50,4 +50,8 @@ private:
     Cluster cluster;
     std::map<int, Socket> connections;
     int last_sent_fd = -1;
+    // group_id → member UUIDs（从 GETNETWORK 获取）
+    std::map<uint64_t, std::vector<uint64_t>> groups_;
+    // 根据 key 找到所属组的副本列表
+    std::vector<uint64_t> getReplicasForKey(const std::string &key);
 };
