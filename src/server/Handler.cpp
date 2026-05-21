@@ -311,7 +311,6 @@ std::string Handler::handleRaft(resp::RespValue request, Server &server, int fd)
     auto it = std::get_if<resp::Array>(request.getPtr());
     if (it->value->size() < 2) return "";
 
-    // 第二个元素是 group_id
     uint64_t gid = 0;
     if (auto gid_val = std::get_if<resp::SimpleString>((*it->value)[1]->getPtr()))
         gid = Utils::to_uint64_t(gid_val->value);
@@ -320,6 +319,8 @@ std::string Handler::handleRaft(resp::RespValue request, Server &server, int fd)
     if (!rn) return "";
 
     uint64_t sender = server.getCluster().getUuidByFd(fd);
+    // RAFT_AE 同时作为节点级心跳
+    server.getCluster().updateHeartbeat(fd);
     rn->step(sender, resp::encode(request));
     return "";
 }

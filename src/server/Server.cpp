@@ -50,6 +50,15 @@ Server::Server(const std::string &ip, uint16_t port) : server_sock(), threadPool
         message_queue.emplace(msg, fd);
     });
 
+    // 设置节点故障回调：触发 Raft 组重建（补 replica）
+    cluster.setFailureCallback([this](uint64_t /*dead_uuid*/) {
+        std::unique_lock<std::mutex> lock(queueMutex);
+        message_queue.emplace("REBUILD_RAFTS", -2);
+        lock.unlock();
+        uint64_t one = 1;
+        ::write(eventfd_fd, &one, sizeof(one));
+    });
+
     kvstore.readfromfile(Config::SNAPSHOT_DIR);
     aof.recover(*this);
     std::cout << "Server Started" << std::endl;
@@ -283,6 +292,17 @@ void Server::epoll_step() {
         }
     }
 
+    // 标记所有活跃集群连接为存活（依赖 TCP 连接状态）
+    {
+        auto conns = cluster.getConnections();
+        for (auto &[uuid, fd] : conns) {
+            (void)uuid;
+            if (fd != -1 && connections.find(fd) != connections.end())
+                cluster.updateHeartbeat(fd);
+        }
+    }
+    cluster.checkTimeouts();
+
     // Raft tick — 推进所有组的选举计时和心跳
     for (auto &[gid, rn] : raft_groups) {
         rn.tick();
@@ -384,7 +404,8 @@ void Server::joinCluster(const std::string &bootstrap_ip, uint16_t bootstrap_por
         std::string str = recv(sock);
         sock.parser().append(str);
     }
-    auto topo = Utils::getTopo(sock.parser().getResult().value());
+    std::map<uint64_t, std::vector<uint64_t>> tmp_groups;
+    auto topo = Utils::getTopoV2(sock.parser().getResult().value(), tmp_groups);
 
     // 进入同步状态：所有现有节点将向我推送属于我的数据
     markSyncing(static_cast<int>(topo.size()));

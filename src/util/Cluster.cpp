@@ -28,8 +28,12 @@ void Cluster::heartbeatLoop() {
         std::this_thread::sleep_for(std::chrono::milliseconds(Config::HEARTBEAT_INTERVAL_MS));
         if (!running)
             break;
-        sendHeartbeats();
-        checkTimeouts();
+        try {
+            sendHeartbeats();
+            checkTimeouts();
+        } catch (const std::exception &e) {
+            std::cerr << "[HB] exception: " << e.what() << std::endl;
+        }
     }
 }
 
@@ -70,6 +74,8 @@ void Cluster::checkTimeouts() {
                   << std::endl;
         delNodeToHash(uuid);
         delTopoNode(uuid);
+        if (failure_cb)
+            failure_cb(uuid);
     }
 }
 

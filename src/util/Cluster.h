@@ -74,9 +74,17 @@ public:
     void setSendCallback(SendCallback cb) { send_cb = std::move(cb); }
     void updateHeartbeat(int fd);
 
+    // 节点故障回调（PD replica 补位）
+    using FailureCallback = std::function<void(uint64_t dead_uuid)>;
+    void setFailureCallback(FailureCallback cb) { failure_cb = std::move(cb); }
+
 private:
     void sendHeartbeats();
+
+public:
     void checkTimeouts();
+
+private:
     volatile bool running = false;
     Node self_node;
     std::thread heartbeat_thread;
@@ -101,4 +109,5 @@ private:
     std::map<uint64_t, uint64_t> gossip_cache;
     // 发送回调，心跳线程通过它将消息推入Server消息队列
     SendCallback send_cb;
+    FailureCallback failure_cb;
 };
