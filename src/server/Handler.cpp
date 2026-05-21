@@ -315,13 +315,11 @@ std::string Handler::handleRaft(resp::RespValue request, Server &server, int fd)
     if (auto gid_val = std::get_if<resp::SimpleString>((*it->value)[1]->getPtr()))
         gid = Utils::to_uint64_t(gid_val->value);
 
-    auto *rn = server.getRaftGroup(gid);
-    if (!rn) return "";
-
-    uint64_t sender = server.getCluster().getUuidByFd(fd);
-    // RAFT_AE 同时作为节点级心跳
+    // RAFT_AE 同时作为节点级心跳 + 推入 Raft 队列由主线程消费
     server.getCluster().updateHeartbeat(fd);
-    rn->step(sender, resp::encode(request));
+    server.enqueueRaftMsg(gid,
+        server.getCluster().getUuidByFd(fd),
+        resp::encode(request));
     return "";
 }
 

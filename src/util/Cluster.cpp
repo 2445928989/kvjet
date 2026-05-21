@@ -259,6 +259,7 @@ uint64_t Cluster::generateUUID() {
     return dis(gen);
 }
 int Cluster::getConnection(uint64_t UUID) {
+    std::shared_lock lock(connections_lock);
     auto it = connections.find(UUID);
     if (it == connections.end())
         return -1;

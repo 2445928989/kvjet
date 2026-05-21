@@ -52,9 +52,11 @@ public:
     bool findGossip(uint64_t UUID);
     void addGossip(uint64_t UUID);
     std::map<uint64_t, Node> getTopo() {
+        std::shared_lock lock(topo_lock);
         return topo;
     }
     std::map<uint64_t, int> getConnections() {
+        std::shared_lock lock(connections_lock);
         return connections;
     }
     void delTopoNode(uint64_t UUID);

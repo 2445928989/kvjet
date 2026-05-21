@@ -92,6 +92,8 @@ ssize_t Client::send(const std::string &request, const std::string &key, bool is
         } else if (n == -1) {
             if (errno == EINTR)
                 continue;
+            if (errno == EAGAIN || errno == EWOULDBLOCK)
+                break;
             throw std::runtime_error("Send error: " + std::string(strerror(errno)));
         }
         sent += static_cast<size_t>(n);
@@ -113,6 +115,8 @@ std::string Client::recv(int target_fd) {
     } else if (n == 0) {
         throw std::runtime_error("Connection closed");
     } else {
+        if (errno == EAGAIN || errno == EWOULDBLOCK)
+            return "";
         throw std::runtime_error("Recv error: " + std::string(strerror(errno)));
     }
 }
@@ -383,6 +387,9 @@ void Client::benchmark(int ops, const std::string &op_type) {
                         target_sock.parser().pop();
                         remaining--;
                     }
+                } else if (n <= 0) {
+                    std::cerr << "[Bench] recv error, fd closed" << std::endl;
+                    break;
                 }
             }
             pending[target_uuid].clear();
@@ -406,6 +413,9 @@ void Client::benchmark(int ops, const std::string &op_type) {
                     target_sock.parser().pop();
                     remaining--;
                 }
+            } else if (n <= 0) {
+                std::cerr << "[Bench] recv error, fd closed" << std::endl;
+                break;
             }
         }
     }
@@ -457,6 +467,9 @@ void Client::latencyBenchmark(int ops, const std::string &op_type) {
             ssize_t n = ::recv(target_sock.fd(), buf, sizeof(buf), 0);
             if (n > 0) {
                 target_sock.parser().append(std::string(buf, n));
+            } else if (n <= 0) {
+                std::cerr << "[Latency] recv error" << std::endl;
+                break;
             }
         }
 

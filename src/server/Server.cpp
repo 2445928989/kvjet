@@ -93,7 +93,7 @@ ssize_t Server::send(const std::string &str, const Socket &sock) {
         } else if (n == -1) {
             if (errno == EINTR)
                 continue;
-            if (errno == EBADF)
+            if (errno == EBADF || errno == EAGAIN || errno == EWOULDBLOCK)
                 break;
             throw std::runtime_error("Send error: " + std::string(strerror(errno)));
         }
@@ -292,6 +292,20 @@ void Server::epoll_step() {
         }
     }
 
+    // 消费 Raft 消息队列（主线程处理，避免线程池并发访问 RaftNode）
+    {
+        std::unique_lock lock(raftQueueMutex);
+        while (!raft_msg_queue.empty()) {
+            auto [gid, sender, raw] = std::move(raft_msg_queue.front());
+            raft_msg_queue.pop();
+            lock.unlock();
+            auto *rn = getRaftGroup(gid);
+            if (rn)
+                rn->step(sender, raw);
+            lock.lock();
+        }
+    }
+
     // 标记所有活跃集群连接为存活（依赖 TCP 连接状态）
     {
         auto conns = cluster.getConnections();
@@ -323,8 +337,12 @@ void Server::run() {
     cluster.start();
     initRaftGroups();
     snapshot_thread = std::thread([this] { snapshotLoop(); });
-    while (running && !shutdown_requested) {
-        epoll_step();
+    try {
+        while (running && !shutdown_requested) {
+            epoll_step();
+        }
+    } catch (const std::exception &e) {
+        std::cerr << "[Server] run() exception: " << e.what() << std::endl;
     }
     gracefulShutdown();
 }
@@ -369,17 +387,25 @@ void Server::snapshotLoop() {
         std::this_thread::sleep_for(std::chrono::milliseconds(Config::SNAPSHOT_INTERVAL_MS));
         if (!running) break;
 
-        pid_t pid = fork();
-        if (pid == 0) {
-            // 子进程：COW 保护，无锁遍历写快照
-            kvstore.writetofileFork(Config::SNAPSHOT_DIR);
-            _exit(0);
-        } else if (pid > 0) {
-            waitpid(pid, nullptr, 0);
-        }
+        try {
+            pid_t pid = fork();
+            if (pid == 0) {
+                kvstore.writetofileFork(Config::SNAPSHOT_DIR);
+                _exit(0);
+            } else if (pid > 0) {
+                int ret = waitpid(pid, nullptr, 0);
+                if (ret == -1)
+                    std::cerr << "[Snapshot] waitpid failed: "
+                              << strerror(errno) << std::endl;
+            } else {
+                std::cerr << "[Snapshot] fork failed: "
+                          << strerror(errno) << std::endl;
+            }
 
-        // 快照完成后截断 AOF
-        std::filesystem::resize_file(Config::AOF_DIR, 0);
+            std::filesystem::resize_file(Config::AOF_DIR, 0);
+        } catch (const std::exception &e) {
+            std::cerr << "[Snapshot] exception: " << e.what() << std::endl;
+        }
     }
 }
 

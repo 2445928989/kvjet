@@ -17,7 +17,15 @@ ThreadPool::ThreadPool(int threadCount) : stop(false) {
                     task = std::move(tasks.front());
                     tasks.pop();
                 }
-                task();
+                try {
+                    task();
+                } catch (const std::exception &e) {
+                    std::cerr << "[ThreadPool] task exception: " << e.what()
+                              << std::endl;
+                } catch (...) {
+                    std::cerr << "[ThreadPool] task unknown exception"
+                              << std::endl;
+                }
             }
         });
     }

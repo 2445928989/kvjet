@@ -14,6 +14,7 @@
 #include <iostream>
 #include <map>
 #include <optional>
+#include <tuple>
 #include <string>
 #include <sys/epoll.h>
 // 服务端类
@@ -68,6 +69,10 @@ public:
     Cluster &getCluster() { return cluster; }
     std::mutex &getQueueMutex() { return queueMutex; }
     std::queue<std::pair<std::string, int>> &getMessageQueue() { return message_queue; }
+    void enqueueRaftMsg(uint64_t gid, uint64_t sender, const std::string &raw) {
+        std::unique_lock lock(raftQueueMutex);
+        raft_msg_queue.emplace(gid, sender, raw);
+    }
 
     void requestShutdown() { shutdown_requested = true; }
 
@@ -110,6 +115,9 @@ private:
     std::mutex queueMutex;
     // 消息队列
     std::queue<std::pair<std::string, int>> message_queue;
+    // Raft 消息队列（主线程消费，避免线程池并发访问 RaftNode）
+    std::mutex raftQueueMutex;
+    std::queue<std::tuple<uint64_t, uint64_t, std::string>> raft_msg_queue; // (gid, sender, raw)
     // 主线程的socket连接
     std::map<int, Socket> connections;
     // 监听socket
