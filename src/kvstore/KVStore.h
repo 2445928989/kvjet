@@ -12,6 +12,8 @@ public:
     // 若LRI有淘汰键，则返回
     std::optional<std::string> set(std::string key, T value);
     T *get(std::string_view key);
+    // 锁内取值并编码，避免返回裸指针后锁释放导致的 UAF
+    std::string getValue(std::string_view key);
     bool del(std::string_view key);
     bool checkexist(std::string_view key);
     KVStore(size_t shardCount = Config::SHARD_COUNT);

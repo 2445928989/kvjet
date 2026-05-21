@@ -157,9 +157,9 @@ std::string Handler::GET(resp::RespValue request, Server &server) {
     }
     auto key = std::move(it->value.value()[1]);
     if (auto key_ = std::get_if<resp::SimpleString>(key->getPtr())) {
-        auto result = server.getKVStore().get(std::move(key_->value));
-        if (result != nullptr) {
-            return resp::encode(*result);
+        std::string result = server.getKVStore().getValue(std::move(key_->value));
+        if (!result.empty()) {
+            return result;
         } else {
             resp::RespValue ret(resp::BulkString(std::nullopt));
             return resp::encode(ret);

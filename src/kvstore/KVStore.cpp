@@ -1,4 +1,5 @@
 #include "KVStore.h"
+#include "../resp/RespEncoder.h"
 #include "../resp/RespValue.h"
 #include "HashTable.h"
 template <typename T>
@@ -30,6 +31,20 @@ T* KVStore<T>::get(std::string_view key) {
         shard.lru.access(key);
     }
     return result;
+}
+
+template <typename T>
+std::string KVStore<T>::getValue(std::string_view key) {
+    Shard &shard = getShard(key);
+    std::unique_lock lock(shard.lock);
+    auto *result = shard.data.get(key);
+    if (result == nullptr) return "";
+    shard.lru.access(key);
+    // 在锁内完成编码，避免返回后指针失效
+    if constexpr (std::same_as<T, resp::RespValue>) {
+        return resp::encode(*result);
+    }
+    return "";
 }
 
 template <typename T>
