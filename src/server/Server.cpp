@@ -10,6 +10,13 @@
 #include <sys/socket.h>
 #include <sys/wait.h>
 #include <unistd.h>
+
+static void wakeEpoll(int eventfd_fd) {
+    uint64_t one = 1;
+    if (::write(eventfd_fd, &one, sizeof(one)) == -1)
+        std::cerr << "[wakeEpoll] write failed: " << strerror(errno) << std::endl;
+}
+
 Server::Server(const std::string &ip, uint16_t port) : server_sock(), threadPool(Config::THREAD_COUNT), kvstore(), aof(Config::AOF_DIR), cluster(port + 1, ip) {
     memset(events, 0, sizeof(events));
     server_sock.bind("0.0.0.0", port);
@@ -55,8 +62,7 @@ Server::Server(const std::string &ip, uint16_t port) : server_sock(), threadPool
         std::unique_lock<std::mutex> lock(queueMutex);
         message_queue.emplace("REBUILD_RAFTS", -2);
         lock.unlock();
-        uint64_t one = 1;
-        ::write(eventfd_fd, &one, sizeof(one));
+        wakeEpoll(eventfd_fd);
     });
 
     kvstore.readfromfile(Config::SNAPSHOT_DIR);
@@ -135,8 +141,7 @@ void Server::handleCommand(int sock, resp::RespValue value) {
     lock.unlock();
 
     // 唤醒 epoll
-    uint64_t one = 1;
-    ::write(eventfd_fd, &one, sizeof(one));
+    wakeEpoll(eventfd_fd);
 }
 bool Server::accept() {
     Socket sock = server_sock.accept();
@@ -362,7 +367,8 @@ void Server::gracefulShutdown() {
     uint64_t self_uuid = cluster.getSelf().UUID;
     for (auto &[uuid, fd] : connections) {
         if (uuid != self_uuid) {
-            ::send(fd, nodeout_cmd.c_str(), nodeout_cmd.size(), MSG_NOSIGNAL);
+            if (::send(fd, nodeout_cmd.c_str(), nodeout_cmd.size(), MSG_NOSIGNAL) == -1)
+                std::cerr << "[Shutdown] NODEOUT send failed: " << strerror(errno) << std::endl;
         }
     }
     cluster.delNodeToHash(cluster.getSelf().UUID);
@@ -374,7 +380,8 @@ void Server::gracefulShutdown() {
             int target_fd = cluster.getConnection(owner_uuid);
             if (target_fd != -1) {
                 std::string set_cmd = "*3\r\n+SET\r\n+" + key + "\r\n" + resp::encode(*value);
-                ::send(target_fd, set_cmd.c_str(), set_cmd.size(), MSG_NOSIGNAL);
+                if (::send(target_fd, set_cmd.c_str(), set_cmd.size(), MSG_NOSIGNAL) == -1)
+                    std::cerr << "[Shutdown] migration send failed: " << strerror(errno) << std::endl;
             }
         }
     });
@@ -484,8 +491,7 @@ RaftNode::SendCb Server::makeRaftSendCb() {
         std::unique_lock lock(queueMutex);
         message_queue.emplace(std::move(msg.payload), fd);
         lock.unlock();
-        uint64_t one = 1;
-        ::write(eventfd_fd, &one, sizeof(one));
+        wakeEpoll(eventfd_fd);
     };
 }
 
