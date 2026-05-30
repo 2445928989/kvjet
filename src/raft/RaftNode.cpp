@@ -118,6 +118,7 @@ void RaftNode::becomeLeader() {
 // ============ tick ============
 
 void RaftNode::tick() {
+    std::unique_lock lock(mtx_);
     if (state_ == Leader) {
         heartbeatTimer--;
         if (heartbeatTimer <= 0) {
@@ -138,6 +139,7 @@ void RaftNode::tick() {
 // ============ step ============
 
 void RaftNode::step(uint64_t from_peer, const std::string &raw) {
+    std::unique_lock lock(mtx_);
     auto parts = parseParts(raw);
     if (parts.empty()) return;
 
@@ -307,17 +309,23 @@ void RaftNode::handleRequestVoteReply(uint64_t /*from_peer*/, const std::string 
 // ============ propose ============
 
 std::optional<std::string> RaftNode::propose(const std::string &cmd) {
-    if (state_ != Leader)
-        return std::nullopt;
-
-    log.push_back({currentTerm, cmd});
-    appendToDisk(log.back());
-    for (auto &peer : peers)
-        sendAppendEntries(peer);
-
-    if (peers.empty())
-        commitIndex = lastLogIndex();
-
+    LogEntry entry;
+    {
+        std::unique_lock lock(mtx_);
+        if (state_ != Leader)
+            return std::nullopt;
+        entry = {currentTerm, cmd};
+        log.push_back(entry);
+        if (peers.empty())
+            commitIndex = lastLogIndex();
+    }
+    // 锁外落盘，避免阻塞其他线程
+    appendToDisk(entry);
+    {
+        std::unique_lock lock(mtx_);
+        for (auto &peer : peers)
+            sendAppendEntries(peer);
+    }
     return std::nullopt;
 }
 
@@ -365,6 +373,7 @@ bool RaftNode::hasPendingApply() {
 }
 
 std::vector<LogEntry> RaftNode::takePendingApply() {
+    std::unique_lock lock(mtx_);
     std::vector<LogEntry> result;
     while (lastApplied < commitIndex) {
         lastApplied++;
@@ -377,8 +386,13 @@ std::vector<LogEntry> RaftNode::takePendingApply() {
 // ============ 日志持久化 ============
 
 void RaftNode::appendToDisk(const LogEntry &e) {
-    std::ofstream of(logPath_, std::ios::app | std::ios::binary);
-    of << e.term << ' ' << e.command << '\n';
+    std::unique_lock lock(diskMtx_);
+    if (!logFile_.is_open())
+        logFile_.open(logPath_, std::ios::app | std::ios::binary);
+    logFile_ << e.term << ' ' << e.command << '\n';
+    // 每 100 条 flush 一次
+    static thread_local int count = 0;
+    if (++count >= 100) { logFile_.flush(); count = 0; }
 }
 
 void RaftNode::rewriteDisk() {

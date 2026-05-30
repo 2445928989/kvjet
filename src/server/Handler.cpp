@@ -134,7 +134,7 @@ std::string Handler::SET(resp::RespValue request, Server &server) {
         else if (auto val_s = std::get_if<resp::SimpleString>((*it->value)[2]->getPtr()))
             val_str = val_s->value;
 
-        // Raft leader propose（异步复制到组内 follower）
+        // Raft leader propose（mtx 保护并发访问）
         auto *rn = server.getGroupForKey(key_str);
         if (rn)
             rn->propose("SET " + key_str + " " + val_str);
@@ -315,11 +315,12 @@ std::string Handler::handleRaft(resp::RespValue request, Server &server, int fd)
     if (auto gid_val = std::get_if<resp::SimpleString>((*it->value)[1]->getPtr()))
         gid = Utils::to_uint64_t(gid_val->value);
 
-    // RAFT_AE 同时作为节点级心跳 + 推入 Raft 队列由主线程消费
+    auto *rn = server.getRaftGroup(gid);
+    if (!rn) return "";
+
+    // RAFT_AE 同时作为节点级心跳
     server.getCluster().updateHeartbeat(fd);
-    server.enqueueRaftMsg(gid,
-        server.getCluster().getUuidByFd(fd),
-        resp::encode(request));
+    rn->step(server.getCluster().getUuidByFd(fd), resp::encode(request));
     return "";
 }
 

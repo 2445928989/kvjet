@@ -3,7 +3,9 @@
 
 #include "../config/Config.h"
 #include <cstdint>
+#include <fstream>
 #include <functional>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -101,4 +103,8 @@ private:
 
     // 持久化
     std::string logPath_;
+    std::ofstream logFile_;
+    std::mutex diskMtx_;  // 保护 logFile_
+    // 保护日志和状态字段的并发访问
+    mutable std::mutex mtx_;
 };
