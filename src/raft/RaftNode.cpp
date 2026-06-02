@@ -20,24 +20,24 @@ static std::string encodeAppendEntries(uint64_t gid, uint64_t term,
                                         uint64_t prevIdx, uint64_t prevTerm,
                                         uint64_t leaderCommit,
                                         const std::vector<LogEntry> &entries) {
-    std::string s = "*6\r\n+RAFT_AE\r\n+" + std::to_string(gid) + "\r\n+" +
+    int cnt = static_cast<int>(entries.size());
+    int total = 7 + cnt;  // RAFT_AE + gid + term + prevIdx + prevTerm
+                           // + leaderCommit + cnt + cmds...
+    std::string s = "*" + std::to_string(total) + "\r\n+RAFT_AE\r\n+" +
+                    std::to_string(gid) + "\r\n+" +
                     std::to_string(term) + "\r\n+" +
                     std::to_string(prevIdx) + "\r\n+" +
                     std::to_string(prevTerm) + "\r\n+" +
-                    std::to_string(leaderCommit) + "\r\n";
-    if (!entries.empty()) {
-        s += "+" + std::to_string(entries.size()) + "\r\n";
-        for (auto &e : entries)
-            s += "+" + e.command + "\r\n";
-    } else {
-        s += "+0\r\n";
-    }
+                    std::to_string(leaderCommit) + "\r\n+" +
+                    std::to_string(cnt) + "\r\n";
+    for (auto &e : entries)
+        s += "+" + e.command + "\r\n";
     return s;
 }
 
 static std::string encodeAppendEntriesReply(uint64_t gid, uint64_t term,
                                               bool success, uint64_t matchIdx) {
-    return "*4\r\n+RAFT_AER\r\n+" + std::to_string(gid) + "\r\n+" +
+    return "*5\r\n+RAFT_AER\r\n+" + std::to_string(gid) + "\r\n+" +
            std::to_string(term) + "\r\n+" + (success ? "+1\r\n" : "+0\r\n") +
            "+" + std::to_string(matchIdx) + "\r\n";
 }
@@ -118,6 +118,7 @@ void RaftNode::becomeLeader() {
 // ============ tick ============
 
 void RaftNode::tick() {
+    flushDisk();  // 锁外刷盘
     std::unique_lock lock(mtx_);
     if (state_ == Leader) {
         heartbeatTimer--;
@@ -387,12 +388,24 @@ std::vector<LogEntry> RaftNode::takePendingApply() {
 
 void RaftNode::appendToDisk(const LogEntry &e) {
     std::unique_lock lock(diskMtx_);
+    diskBuf_ += std::to_string(e.term) + ' ' + e.command + '\n';
+    // 缓冲区满 1KB 自动刷
+    if (diskBuf_.size() >= 1024) {
+        if (!logFile_.is_open())
+            logFile_.open(logPath_, std::ios::app | std::ios::binary);
+        logFile_ << diskBuf_;
+        diskBuf_.clear();
+    }
+}
+
+void RaftNode::flushDisk() {
+    std::unique_lock lock(diskMtx_);
+    if (diskBuf_.empty()) return;
     if (!logFile_.is_open())
         logFile_.open(logPath_, std::ios::app | std::ios::binary);
-    logFile_ << e.term << ' ' << e.command << '\n';
-    // 每 100 条 flush 一次
-    static thread_local int count = 0;
-    if (++count >= 100) { logFile_.flush(); count = 0; }
+    logFile_ << diskBuf_;
+    logFile_.flush();
+    diskBuf_.clear();
 }
 
 void RaftNode::rewriteDisk() {

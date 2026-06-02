@@ -68,6 +68,7 @@ private:
 
     // ==== 日志持久化 ====
     void appendToDisk(const LogEntry &e);
+    void flushDisk();
     void rewriteDisk();
     void loadFromDisk();
 
@@ -104,7 +105,8 @@ private:
     // 持久化
     std::string logPath_;
     std::ofstream logFile_;
-    std::mutex diskMtx_;  // 保护 logFile_
+    std::string diskBuf_;  // 写缓冲
+    std::mutex diskMtx_;
     // 保护日志和状态字段的并发访问
     mutable std::mutex mtx_;
 };

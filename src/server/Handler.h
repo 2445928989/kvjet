@@ -11,6 +11,7 @@ namespace Handler {
     std::string handle_noAOF(resp::RespValue request, Server &server);
     // 不记录LRU淘汰情况的SET
     std::string SET_noAOF(resp::RespValue request, Server &server);
+    std::string DEL_noAOF(resp::RespValue request, Server &server);
     // 需要记录LRU淘汰情况的SET
     std::string SET(resp::RespValue request, Server &server);
     std::string GET(resp::RespValue request, Server &server);

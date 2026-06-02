@@ -31,10 +31,8 @@ std::string Handler::handle(resp::RespValue request, Server &server, int fd) {
             if (command->value == "GET") {
                 return GET(std::move(request), server);
             } else if (command->value == "SET") {
-                server.getAOF().append(request);
                 return SET(std::move(request), server);
             } else if (command->value == "DEL") {
-                server.getAOF().append(request);
                 return DEL(std::move(request), server);
             } else if (command->value == "EXIST") {
                 return EXIST(std::move(request), server);
@@ -74,7 +72,7 @@ std::string Handler::handle_noAOF(resp::RespValue request, Server &server) {
             } else if (command->value == "SET") {
                 return SET_noAOF(std::move(request), server);
             } else if (command->value == "DEL") {
-                return DEL(std::move(request), server);
+                return DEL_noAOF(std::move(request), server);
             } else if (command->value == "EXIST") {
                 return EXIST(std::move(request), server);
             } else {
@@ -139,6 +137,9 @@ std::string Handler::SET(resp::RespValue request, Server &server) {
         if (rn)
             rn->propose("SET " + key_str + " " + val_str);
 
+        // AOF 在 master 校验之后写入
+        server.getAOF().append(request);
+
         // 乐观 apply（Raft apply 异步兜底）
         auto value = std::move((*it->value)[2]);
         server.getKVStore().set(key_str, std::move(*value));
@@ -169,6 +170,20 @@ std::string Handler::GET(resp::RespValue request, Server &server) {
     }
 }
 
+std::string Handler::DEL_noAOF(resp::RespValue request, Server &server) {
+    auto it = std::get_if<resp::Array>(request.getPtr());
+    if (it->value->size() != 2) {
+        throw std::runtime_error("DEL_noAOF: Usage: DEL key");
+    }
+    auto &key_elem = (*it->value)[1];
+    if (auto key_ = std::get_if<resp::SimpleString>(key_elem->getPtr())) {
+        int64_t ret = server.getKVStore().del(key_->value);
+        return resp::encode(resp::RespValue(ret));
+    } else {
+        throw std::runtime_error("DEL_noAOF: Key is not a SimpleString");
+    }
+}
+
 std::string Handler::DEL(resp::RespValue request, Server &server) {
     auto it = std::get_if<resp::Array>(request.getPtr());
     if (it->value->size() != 2) {
@@ -176,7 +191,24 @@ std::string Handler::DEL(resp::RespValue request, Server &server) {
     }
     auto key = std::move(it->value.value()[1]);
     if (auto key_ = std::get_if<resp::SimpleString>(key->getPtr())) {
-        int64_t ret = server.getKVStore().del(std::move(key_->value));
+        std::string key_str = key_->value;
+
+        if (!server.getCluster().isMasterFor(key_str)) {
+            uint64_t master_uuid = server.getCluster().queryNode(key_str);
+            auto topo = server.getCluster().getTopo();
+            auto ni = topo.find(master_uuid);
+            std::string addr = (ni != topo.end())
+                ? ni->second.ip + ":" + std::to_string(ni->second.port)
+                : std::to_string(master_uuid);
+            return resp::encode(resp::RespValue(resp::Error("MOVED " + addr)));
+        }
+
+        auto *rn = server.getGroupForKey(key_str);
+        if (rn)
+            rn->propose("DEL " + key_str);
+
+        server.getAOF().append(request);
+        int64_t ret = server.getKVStore().del(key_str);
         return resp::encode(resp::RespValue(ret));
     } else {
         throw std::runtime_error("DEL: Key is not a SimpleString");
